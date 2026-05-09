@@ -1,6 +1,10 @@
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import auth from './auth'
 
 const app = new Hono()
+
+app.use('/*', cors())
 
 app.get('/health', (c) => {
   return c.json({ message: 'Hello, World!' })
@@ -9,6 +13,8 @@ app.get('/health', (c) => {
 app.get('/test', (c) => {
   return c.json({ message: 'hello from the api' })
 })
+
+app.route('/auth', auth)
 
 export default app
 
