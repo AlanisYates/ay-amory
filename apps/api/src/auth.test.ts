@@ -4,13 +4,17 @@ const _store: Array<{
   id: number
   email: string
   password: string
+  firstName: string | null
+  lastName: string | null
   createdAt: Date
+  updatedAt: Date
 }> = []
 
 vi.mock('./repository', () => ({
   userRepository: {
-    create: vi.fn(async (data: { email: string; password: string }) => {
-      const user = { id: _store.length + 1, ...data, createdAt: new Date() }
+    create: vi.fn(async (data: { email: string; password: string; firstName?: string; lastName?: string }) => {
+      const now = new Date()
+      const user = { id: _store.length + 1, ...data, firstName: data.firstName ?? null, lastName: data.lastName ?? null, createdAt: now, updatedAt: now }
       _store.push(user)
       return user
     }),

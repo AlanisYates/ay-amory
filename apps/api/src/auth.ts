@@ -18,7 +18,7 @@ auth.onError((err, c) => {
 })
 
 auth.post('/signup', async (c) => {
-  const { email, password } = await c.req.json()
+  const { email, password, firstName, lastName } = await c.req.json()
 
   if (!email || !password) {
     return c.json({ error: 'Email and password are required' }, 400)
@@ -30,7 +30,7 @@ auth.post('/signup', async (c) => {
   }
 
   const hashedPassword = await bcrypt.hash(password, 10)
-  const user = await userRepository.create({ email, password: hashedPassword })
+  const user = await userRepository.create({ email, password: hashedPassword, firstName, lastName })
 
   const token = await sign({ sub: user.id, email: user.email }, JWT_SECRET)
 

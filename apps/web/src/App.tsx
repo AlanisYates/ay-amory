@@ -1,11 +1,30 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+const TOKEN_KEY = 'ay-armory-token'
 
 function App() {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [user, setUser] = useState<{ email: string } | null>(null)
+  const [user, setUser] = useState<{ email: string; firstName?: string | null } | null>(null)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    if (!token) {
+      setLoading(false)
+      return
+    }
+
+    fetch('/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => setUser(data.user))
+      .catch(() => localStorage.removeItem(TOKEN_KEY))
+      .finally(() => setLoading(false))
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -20,7 +39,7 @@ function App() {
         body: JSON.stringify({ email, password }),
       })
 
-      let data: { error?: string; user?: { email: string } }
+      let data: { error?: string; user?: { email: string }; token?: string }
       try {
         data = await res.json()
       } catch {
@@ -34,6 +53,7 @@ function App() {
         return
       }
 
+      localStorage.setItem(TOKEN_KEY, data.token!)
       setUser(data.user!)
     } catch (err) {
       setError(err instanceof TypeError ? 'Failed to connect to server — is the API running on port 3000?' : 'Failed to connect to server')
@@ -41,24 +61,56 @@ function App() {
   }
 
   const handleLogout = () => {
+    localStorage.removeItem(TOKEN_KEY)
     setUser(null)
     setEmail('')
     setPassword('')
     setError('')
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen text-neutral-500">
+        Loading...
+      </div>
+    )
+  }
+
   if (user) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <p className="text-2xl mb-4">Logged in as: {user.email}</p>
-          <button
-            onClick={handleLogout}
-            className="text-2xl px-8 py-4 rounded-lg bg-black text-white cursor-pointer hover:opacity-80 transition-opacity"
-          >
-            Logout
-          </button>
-        </div>
+      <div className="min-h-screen bg-neutral-50">
+        <header className="border-b border-neutral-200 bg-white">
+          <div className="mx-auto max-w-6xl flex items-center justify-between px-6 h-16">
+            <h1 className="text-xl font-bold tracking-tight">ay-armory</h1>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-neutral-500">{user.email}</span>
+              <button
+                onClick={handleLogout}
+                className="text-sm px-4 py-2 rounded-lg bg-black text-white cursor-pointer hover:opacity-80 transition-opacity"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-6xl px-6 py-10">
+          <h2 className="text-3xl font-semibold text-neutral-900 mb-8">Welcome{user.firstName ? `, ${user.firstName}` : ''}</h2>
+
+          <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
+            <h3 className="text-lg font-semibold text-neutral-900 mb-4">Armory Status</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-lg bg-neutral-50 p-5">
+                <p className="text-sm text-neutral-500 mb-1">9mm</p>
+                <p className="text-3xl font-bold text-neutral-900">500</p>
+              </div>
+              <div className="rounded-lg bg-neutral-50 p-5">
+                <p className="text-sm text-neutral-500 mb-1">.223</p>
+                <p className="text-3xl font-bold text-neutral-900">1,000</p>
+              </div>
+            </div>
+          </div>
+        </main>
       </div>
     )
   }
