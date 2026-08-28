@@ -784,29 +784,41 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   typeForId: (id: number) => AmmoType | undefined
 }) {
   const [ammoTypeId, setAmmoTypeId] = useState<number>(bag[0]?.ammoTypeId ?? 0)
-  const [rounds, setRounds] = useState(1)
+  const [rounds, setRounds] = useState(0)
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
+  const [stage, setStage] = useState<'load' | 'shoot' | 'stopped'>(
+    gunLoaded.some(g => g.weaponId === weapon.id && g.rounds > 0) ? 'shoot' : 'load'
+  )
+  const [showStopModal, setShowStopModal] = useState(false)
 
-  // Keep a sensible default selection as the bag changes
+  // Keep a sensible default selection as the bag / gun changes for the current stage
   useEffect(() => {
-    if (!ammoTypeId && bag[0]) setAmmoTypeId(bag[0].ammoTypeId)
-  }, [bag, ammoTypeId])
+    if (stage === 'load') {
+      if (bag[0] && !bag.some(b => b.ammoTypeId === ammoTypeId)) setAmmoTypeId(bag[0].ammoTypeId)
+    } else if (stage === 'shoot') {
+      if (loaded.length && !loaded.some(g => g.ammoTypeId === ammoTypeId)) setAmmoTypeId(loaded[0].ammoTypeId)
+    }
+  }, [bag, gunLoaded, ammoTypeId, stage])
 
   const loaded = gunLoaded.filter(g => g.weaponId === weapon.id)
+  const totalLoaded = loaded.reduce((s, g) => s + g.rounds, 0)
   const fired = strings.filter(s => s.weaponId === weapon.id).reduce((s, x) => s + x.rounds, 0)
-  const ammo = typeForId(ammoTypeId)
+
+  // Selectable ammo types depend on the current stage (bag in Load, gun in Shoot)
+  const selectOptions = stage === 'shoot' ? loaded.filter(g => g.rounds > 0) : bag
+  const selectedValid = selectOptions.some(o => o.ammoTypeId === ammoTypeId)
+  const activeTypeId = selectedValid ? ammoTypeId : (selectOptions[0]?.ammoTypeId ?? 0)
+  const ammo = typeForId(activeTypeId)
   const mismatch = !!ammo && weapon.caliber !== ammo.caliber
 
-  const inBag = bag.find(b => b.ammoTypeId === ammoTypeId)?.inBag ?? 0
-  const loadedForAmmo = loaded.find(g => g.ammoTypeId === ammoTypeId)?.rounds ?? 0
+  const inBag = bag.find(b => b.ammoTypeId === activeTypeId)?.inBag ?? 0
+  const loadedForAmmo = loaded.find(g => g.ammoTypeId === activeTypeId)?.rounds ?? 0
   const firedForAmmo = strings
-    .filter(s => s.weaponId === weapon.id && s.ammoTypeId === ammoTypeId)
+    .filter(s => s.weaponId === weapon.id && s.ammoTypeId === activeTypeId)
     .reduce((s, x) => s + x.rounds, 0)
-  // Stepper cap = the most you could ever act on for this ammo
-  // (load from bag or shoot/return what's loaded). Actions are still hard-capped
-  // to the real inBag / loadedForAmmo below so you can never exceed what you brought.
-  const cap = Math.max(inBag, loadedForAmmo)
+  // Stepper cap = what you can act on for the active ammo in the current stage
+  const cap = stage === 'shoot' ? loadedForAmmo : inBag
 
   const setRoundsClamped = (n: number) => {
     if (!Number.isFinite(n) || n < 0) setRounds(0)
@@ -817,7 +829,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   const act = async (action: 'load' | 'shoot' | 'return', useAll = false) => {
     setError('')
     const amount = useAll ? (action === 'load' ? inBag : loadedForAmmo) : rounds
-    if (!ammoTypeId) { setError('Select an ammo type'); return }
+    if (!activeTypeId) { setError('Select an ammo type'); return }
     if (action === 'load') {
       if (inBag === 0) { setError('No ammo of this type in the bag'); return }
       if (amount <= 0) { setError('Enter a positive round count'); return }
@@ -827,10 +839,28 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
       if (amount <= 0) { setError('Enter a positive round count'); return }
       if (amount > loadedForAmmo) { setError(`Only ${loadedForAmmo} loaded`); return }
     }
-    const err = await onAction(action, weapon.id, ammoTypeId, amount, note)
+    const err = await onAction(action, weapon.id, activeTypeId, amount, note)
     if (err) { setError(err); return }
-    setRounds(1)
+    setRounds(0)
     setNote('')
+    if (action === 'load') setStage('shoot')
+  }
+
+  const handleStop = () => {
+    if (totalLoaded > 0) setShowStopModal(true)
+    else setStage('stopped')
+  }
+
+  const handleStopReturn = async () => {
+    let err: string | null = null
+    for (const g of loaded) {
+      if (g.rounds <= 0) continue
+      const e = await onAction('return', weapon.id, g.ammoTypeId, g.rounds, '')
+      if (e) { err = e; break }
+    }
+    setShowStopModal(false)
+    if (!err) setStage('stopped')
+    else setError(err)
   }
 
   // Stage visual: how much of this ammo for this weapon is currently in the gun vs fired
@@ -875,59 +905,150 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
         </div>
       )}
 
-      <div className="mt-3 space-y-2">
-        <select value={ammoTypeId} onChange={e => { setAmmoTypeId(Number(e.target.value)); setRounds(1) }}
-          className="px-3 py-2 border rounded-lg text-sm w-full">
-          {bag.length === 0 && <option value={0}>No ammo in bag</option>}
-          {bag.map(b => {
-            const t = typeForId(b.ammoTypeId)
-            return <option key={b.ammoTypeId} value={b.ammoTypeId}>{t?.name ?? `Type #${b.ammoTypeId}`} ({b.inBag})</option>
-          })}
-        </select>
+      <div className="mt-3 space-y-3">
+        {stage === 'load' && (
+          <>
+            <select value={ammoTypeId} onChange={e => { setAmmoTypeId(Number(e.target.value)); setRounds(0) }}
+              className="px-3 py-2 border rounded-lg text-sm w-full">
+              {bag.length === 0 && <option value={0}>No ammo in bag</option>}
+              {bag.map(b => {
+                const t = typeForId(b.ammoTypeId)
+                return <option key={b.ammoTypeId} value={b.ammoTypeId}>{t?.name ?? `Type #${b.ammoTypeId}`} ({b.inBag})</option>
+              })}
+            </select>
 
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => step(-5)} disabled={rounds <= 0}
-            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">−5</button>
-          <button type="button" onClick={() => step(-1)} disabled={rounds <= 0}
-            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">−1</button>
-          <input type="number" min="0" value={rounds} inputMode="numeric"
-            onChange={e => setRoundsClamped(Number(e.target.value))}
-            className="w-16 px-2 py-1.5 border rounded-lg text-sm text-center" />
-          <button type="button" onClick={() => step(1)} disabled={rounds >= cap}
-            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+1</button>
-          <button type="button" onClick={() => step(5)} disabled={rounds >= cap}
-            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+5</button>
-        </div>
+            {mismatch && (
+              <p className="text-amber-600 text-xs">
+                ⚠ Caliber mismatch: {weapon.name} is {weapon.caliber}, ammo is {ammo?.caliber}.
+              </p>
+            )}
 
-        <input type="text" placeholder="Note (optional)" value={note}
-          onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm w-full" />
+            <QuickAdd rounds={rounds} cap={cap} onChange={setRoundsClamped} onStep={step} />
 
-        {mismatch && (
-          <p className="text-amber-600 text-xs">
-            ⚠ Caliber mismatch: {weapon.name} is {weapon.caliber}, ammo is {ammo?.caliber}.
-          </p>
+            <input type="text" placeholder="Note (optional)" value={note}
+              onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm w-full" />
+
+            {error && <p className="text-red-500 text-xs">{error}</p>}
+
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => act('load')}
+                disabled={rounds === 0 || inBag === 0}
+                className="px-3 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Load</button>
+              <button type="button" onClick={() => act('load', true)}
+                disabled={inBag === 0}
+                className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Load All ({inBag})</button>
+            </div>
+          </>
         )}
-        {error && <p className="text-red-500 text-xs">{error}</p>}
 
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => act('load')}
-            disabled={inBag === 0}
-            className="px-3 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Load</button>
-          <button type="button" onClick={() => act('load', true)}
-            disabled={inBag === 0}
-            className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Load All ({inBag})</button>
-          <button type="button" onClick={() => act('shoot')}
-            disabled={loadedForAmmo === 0}
-            className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Shoot</button>
-          <button type="button" onClick={() => act('shoot', true)}
-            disabled={loadedForAmmo === 0}
-            className="px-3 py-2 border border-red-300 text-red-700 rounded-lg text-sm hover:bg-red-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Shoot All</button>
-          <button type="button" onClick={() => act('return')}
-            disabled={loadedForAmmo === 0}
-            className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Return</button>
-          <button type="button" onClick={() => act('return', true)}
-            disabled={loadedForAmmo === 0}
-            className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Return All</button>
+        {stage === 'shoot' && (
+          <>
+            <p className="text-sm text-neutral-600">
+              Loaded: <span className="font-semibold">{loadedForAmmo}</span> × {ammo?.name ?? `Type #${activeTypeId}`}
+            </p>
+
+            {loaded.filter(g => g.rounds > 0).length > 1 && (
+              <select value={ammoTypeId} onChange={e => { setAmmoTypeId(Number(e.target.value)); setRounds(0) }}
+                className="px-3 py-2 border rounded-lg text-sm w-full">
+                {loaded.filter(g => g.rounds > 0).map(g => {
+                  const t = typeForId(g.ammoTypeId)
+                  return <option key={g.ammoTypeId} value={g.ammoTypeId}>{t?.name ?? `Type #${g.ammoTypeId}`} ({g.rounds})</option>
+                })}
+              </select>
+            )}
+
+            <QuickAdd rounds={rounds} cap={cap} onChange={setRoundsClamped} onStep={step} />
+
+            <input type="text" placeholder="Note (optional)" value={note}
+              onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm w-full" />
+
+            {error && <p className="text-red-500 text-xs">{error}</p>}
+
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => act('shoot')}
+                disabled={rounds === 0 || loadedForAmmo === 0}
+                className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Shoot</button>
+              <button type="button" onClick={() => act('shoot', true)}
+                disabled={loadedForAmmo === 0}
+                className="px-3 py-2 border border-red-300 text-red-700 rounded-lg text-sm hover:bg-red-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Shoot All</button>
+              <button type="button" onClick={() => setStage('load')}
+                className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Load More</button>
+              <button type="button" onClick={handleStop}
+                disabled={totalLoaded === 0}
+                className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Stop</button>
+            </div>
+          </>
+        )}
+
+        {stage === 'stopped' && (
+          <div className="space-y-2">
+            <p className="text-sm text-neutral-500">
+              Fired this session: <span className="font-semibold text-neutral-700">{fired}</span> rounds
+            </p>
+            <button type="button" onClick={() => setStage('load')}
+              className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Resume</button>
+          </div>
+        )}
+      </div>
+
+      {showStopModal && (
+        <ConfirmStopModal
+          weaponName={weapon.name}
+          remaining={totalLoaded}
+          onReload={() => setShowStopModal(false)}
+          onReturn={handleStopReturn}
+        />
+      )}
+    </div>
+  )
+}
+
+function QuickAdd({ rounds, cap, onChange, onStep }: {
+  rounds: number
+  cap: number
+  onChange: (n: number) => void
+  onStep: (d: number) => void
+}) {
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2">
+        {[5, 10, 30].map(n => (
+          <button type="button" key={n} onClick={() => onChange(rounds + n)} disabled={rounds + n > cap}
+            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+{n}</button>
+        ))}
+      </div>
+      <div className="flex items-center gap-1 mt-2">
+        <button type="button" onClick={() => onStep(-1)} disabled={rounds <= 0}
+          className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">−</button>
+        <input type="number" min="0" value={rounds} inputMode="numeric"
+          onChange={e => onChange(Number(e.target.value))}
+          className="w-16 px-2 py-1.5 border rounded-lg text-sm text-center" />
+        <button type="button" onClick={() => onStep(1)} disabled={rounds >= cap}
+          className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+      </div>
+      {rounds === 0 && <p className="text-xs text-neutral-400 mt-1">No rounds selected</p>}
+    </div>
+  )
+}
+
+function ConfirmStopModal({ weaponName, remaining, onReload, onReturn }: {
+  weaponName: string
+  remaining: number
+  onReload: () => void
+  onReturn: () => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+        <h3 className="text-lg font-semibold mb-1">Stop {weaponName}?</h3>
+        <p className="text-sm text-neutral-600 mb-4">
+          {remaining} round{remaining === 1 ? '' : 's'} still loaded. Auto reload, or return them to the bag?
+        </p>
+        <div className="flex gap-3 mt-2">
+          <button type="button" onClick={onReload}
+            className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Auto Reload</button>
+          <button type="button" onClick={onReturn}
+            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer">Auto Return to Bag</button>
         </div>
       </div>
     </div>
@@ -1564,7 +1685,7 @@ function WeaponManager({ weapons, onRefresh }: { weapons: Weapon[]; onRefresh: (
       {weapons.length === 0 ? (
         <p className="text-sm text-neutral-500">No weapons yet.</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
           {weapons.map(w => {
             const hist = history[w.id]
             const total = totals[w.id]
