@@ -1,8 +1,53 @@
-import { pgTable, text, serial, timestamp } from 'drizzle-orm/pg-core'
+import { pgTable, text, serial, timestamp, integer, boolean } from 'drizzle-orm/pg-core'
 
-// Temporary remove Users
-// export const users = pgTable('users', {
-//   id: serial('id').primaryKey(),
-//   username: text('username').notNull().unique(),
-//   createdAt: timestamp('created_at').defaultNow().notNull(),
-// })
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  password: text('password').notNull(),
+  firstName: text('first_name'),
+  lastName: text('last_name'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
+export const ammoTypes = pgTable('ammo_types', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  name: text('name').notNull(),
+  caliber: text('caliber').notNull(),
+  grain: integer('grain'),
+  brand: text('brand'),
+  description: text('description'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
+export const rangeDaySessions = pgTable('range_day_sessions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  note: text('note'),
+  startedAt: timestamp('started_at').defaultNow().notNull(),
+  endedAt: timestamp('ended_at'),
+})
+
+export const ammoTransactions = pgTable('ammo_transactions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  type: text('type').notNull(), // acquisition | expenditure | transfer | adjustment | range_day_start | range_day_end
+  note: text('note'),
+  rangeDaySessionId: integer('range_day_session_id').references(() => rangeDaySessions.id),
+  occurredAt: timestamp('occurred_at').notNull(),
+  price: integer('price'),
+  vendor: text('vendor'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
+export const ammoLedgerEntries = pgTable('ammo_ledger_entries', {
+  id: serial('id').primaryKey(),
+  transactionId: integer('transaction_id').notNull().references(() => ammoTransactions.id),
+  ammoTypeId: integer('ammo_type_id').notNull().references(() => ammoTypes.id),
+  quantity: integer('quantity').notNull(),
+  location: text('location').notNull(), // storage | bag | equity
+  isBalancing: boolean('is_balancing').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
