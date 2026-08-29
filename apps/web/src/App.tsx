@@ -880,11 +880,6 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
     else setError(err)
   }
 
-  // Stage visual: how much of this ammo for this weapon is currently in the gun vs fired
-  const stageTotal = loadedForAmmo + firedForAmmo
-  const loadedPct = stageTotal > 0 ? (loadedForAmmo / stageTotal) * 100 : 0
-  const firedPct = stageTotal > 0 ? (firedForAmmo / stageTotal) * 100 : 0
-
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-4">
       <div className="flex items-center justify-between">
@@ -892,24 +887,21 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
         <span className="text-xs bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full">{weapon.caliber}</span>
       </div>
 
-      {/* Budget: how much of this ammo is still available to load */}
-      <p className={`text-xs mt-2 ${inBag === 0 ? 'text-red-600' : 'text-neutral-500'}`}>
-        In bag (available to load): <span className="font-semibold">{inBag}</span>
-      </p>
-
-      {/* Stage: loaded in gun vs fired */}
-      {stageTotal > 0 && (
-        <div className="mt-2">
-          <div className="flex h-2.5 rounded-full overflow-hidden bg-neutral-200">
-            <div style={{ width: `${loadedPct}%` }} className="bg-blue-500" />
-            <div style={{ width: `${firedPct}%` }} className="bg-red-500" />
-          </div>
-          <div className="flex justify-between text-xs mt-1">
-            <span className="text-blue-600 font-medium">Loaded {loadedForAmmo}</span>
-            <span className="text-red-600 font-medium">Fired {firedForAmmo}</span>
-          </div>
+      {/* Per-ammo snapshot: bag / remaining loaded / fired */}
+      <div className="grid grid-cols-3 gap-2 mt-2">
+        <div>
+          <p className="text-xs text-neutral-400 uppercase tracking-wide">Bag</p>
+          <p className={`text-2xl font-bold ${inBag === 0 ? 'text-red-600' : 'text-neutral-900'}`}>{inBag.toLocaleString()}</p>
         </div>
-      )}
+        <div>
+          <p className="text-xs text-neutral-400 uppercase tracking-wide">Loaded</p>
+          <p className="text-2xl font-bold text-blue-600">{loadedForAmmo.toLocaleString()}</p>
+        </div>
+        <div>
+          <p className="text-xs text-neutral-400 uppercase tracking-wide">Fired</p>
+          <p className="text-2xl font-bold text-red-600">{firedForAmmo.toLocaleString()}</p>
+        </div>
+      </div>
 
       {loaded.length > 0 && (
         <div className="text-sm text-neutral-500 mt-2 space-y-0.5">
@@ -918,7 +910,6 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
               Loaded: <span className="font-medium">{g.rounds}</span> × {typeForId(g.ammoTypeId)?.name ?? `Type #${g.ammoTypeId}`}
             </p>
           ))}
-          <p className="text-neutral-700 font-medium">Fired (total): {fired}</p>
         </div>
       )}
 
