@@ -904,13 +904,9 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
       </div>
 
       {loaded.length > 0 && (
-        <div className="text-sm text-neutral-500 mt-2 space-y-0.5">
-          {loaded.map(g => (
-            <p key={g.ammoTypeId}>
-              Loaded: <span className="font-medium">{g.rounds}</span> × {typeForId(g.ammoTypeId)?.name ?? `Type #${g.ammoTypeId}`}
-            </p>
-          ))}
-        </div>
+        <p className="text-sm text-neutral-600 mt-2">
+          Loaded: {loaded.map(g => typeForId(g.ammoTypeId)?.name ?? `Type #${g.ammoTypeId}`).join(', ')}
+        </p>
       )}
 
       <div className="mt-3 space-y-3">
