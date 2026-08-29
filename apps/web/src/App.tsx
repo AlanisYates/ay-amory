@@ -975,19 +975,16 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
               <button type="button" onClick={() => act('shoot', true)}
                 disabled={loadedForAmmo === 0}
                 className="px-3 py-2 border border-red-300 text-red-700 rounded-lg text-sm hover:bg-red-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Shoot All</button>
-              <button type="button" onClick={() => setStage('load')}
-                className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Load More</button>
               <button type="button" onClick={handleStop}
-                disabled={totalLoaded === 0}
-                className="ml-auto text-xs text-neutral-400 hover:text-red-500 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Stop</button>
+                className="ml-auto px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">End Round</button>
             </div>
           </>
         )}
 
         {stage === 'stopped' && (
-          <div className="space-y-2">
+          <div className="space-y-2 opacity-70">
             <p className="text-sm text-neutral-500">
-              Fired this session: <span className="font-semibold text-neutral-700">{fired}</span> rounds
+              Out of ammo · fired <span className="font-semibold text-neutral-700">{fired}</span> rounds
             </p>
             <button type="button" onClick={() => setStage('load')}
               className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Resume</button>
@@ -1044,15 +1041,15 @@ function ConfirmStopModal({ weaponName, remaining, onReload, onReturn }: {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-        <h3 className="text-lg font-semibold mb-1">Stop {weaponName}?</h3>
+        <h3 className="text-lg font-semibold mb-1">End round for {weaponName}?</h3>
         <p className="text-sm text-neutral-600 mb-4">
-          {remaining} round{remaining === 1 ? '' : 's'} still loaded. Auto reload, or return them to the bag?
+          {remaining} round{remaining === 1 ? '' : 's'} still loaded. Return them to the bag, or keep shooting?
         </p>
         <div className="flex gap-3 mt-2">
           <button type="button" onClick={onReload}
-            className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Auto Reload</button>
+            className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Keep Shooting</button>
           <button type="button" onClick={onReturn}
-            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer">Auto Return to Bag</button>
+            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer">Return to Bag</button>
         </div>
       </div>
     </div>
