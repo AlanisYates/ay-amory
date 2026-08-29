@@ -547,22 +547,34 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
           <form onSubmit={submit} className="flex flex-col gap-6">
             {step === 1 && (
               <div>
-                <p className="text-sm text-neutral-500 mb-3">Pick the weapons you're bringing. You can change this later on the Weapons tab.</p>
+                <p className="text-sm text-neutral-500 mb-3">Tap the weapons you're bringing. You can add more later on the Weapons tab.</p>
                 {weapons.length === 0 ? (
                   <p className="text-sm text-neutral-400">No weapons yet — you can skip this and add them later.</p>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {weapons.map(w => (
-                      <label key={w.id}
-                        className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm cursor-pointer transition-colors ${
-                          selectedWeapons.includes(w.id) ? 'border-black bg-neutral-50' : 'border-neutral-200'
-                        }`}>
-                        <input type="checkbox" checked={selectedWeapons.includes(w.id)}
-                          onChange={() => toggleWeapon(w.id)} className="accent-black" />
-                        <span className="font-medium">{w.name}</span>
-                        <span className="text-xs text-neutral-400">{w.caliber}</span>
-                      </label>
-                    ))}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {weapons.map(w => {
+                      const selected = selectedWeapons.includes(w.id)
+                      return (
+                        <button type="button" key={w.id} onClick={() => toggleWeapon(w.id)}
+                          className={`text-left rounded-xl border p-4 flex flex-col gap-3 transition-colors cursor-pointer ${
+                            selected ? 'border-black bg-neutral-50 ring-1 ring-black' : 'border-neutral-200 bg-white hover:border-neutral-400'
+                          }`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-semibold text-neutral-900">{w.name}</p>
+                              <p className="text-xs text-neutral-400 capitalize mt-0.5">{w.type} · {w.caliber}</p>
+                            </div>
+                            <span className="shrink-0 text-xs bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full">{w.caliber}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className={`w-4 h-4 rounded-full border flex items-center justify-center text-[10px] ${selected ? 'bg-black text-white border-black' : 'border-neutral-300 text-transparent'}`}>✓</span>
+                            <span className={selected ? 'text-neutral-900 font-medium' : 'text-neutral-400'}>
+                              {selected ? 'In your range bag' : 'Add to range bag'}
+                            </span>
+                          </div>
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
                 <button type="button" onClick={() => setStep(2)}
@@ -574,6 +586,27 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
 
             {step === 2 && (
               <div className="flex flex-col gap-4">
+                {/* Keep the selected-weapon context visible on the ammo step */}
+                <div className="rounded-xl border border-neutral-200 bg-white p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-neutral-700">Your range bag</p>
+                    <button type="button" onClick={() => setStep(1)}
+                      className="text-xs text-neutral-400 hover:text-neutral-700 cursor-pointer">Edit</button>
+                  </div>
+                  {selectedWeapons.length === 0 ? (
+                    <p className="text-sm text-neutral-400">No weapons selected — you can add them later on the Weapons tab.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {weapons.filter(w => selectedWeapons.includes(w.id)).map(w => (
+                        <span key={w.id} className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-100 rounded-lg text-sm">
+                          <span className="font-medium text-neutral-800">{w.name}</span>
+                          <span className="text-xs text-neutral-400">{w.caliber}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <input type="text" placeholder="Note (e.g. Burro Canyon)" value={note}
                   onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
 
