@@ -500,7 +500,7 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
   const toggleAmmo = (id: number) => {
     setRows(prev => prev.some(r => r.ammoTypeId === id)
       ? prev.filter(r => r.ammoTypeId !== id)
-      : [...prev, { ammoTypeId: id, quantity: Math.min(50, availableFor(id)) }])
+      : [...prev, { ammoTypeId: id, quantity: 0 }])
   }
   const stepAmmo = (id: number, delta: number) => {
     setRows(prev => prev.flatMap(r => {
@@ -657,7 +657,7 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
                                 <QuickAdd rounds={qty} cap={avail}
                                   onChange={(n) => setAmmoQty(t.id, n)}
                                   onStep={(d) => stepAmmo(t.id, d)}
-                                  steps={[50]} step={50} inline />
+                                  steps={[50, 100]} step={1} inline />
                                 <button type="button" onClick={() => toggleAmmo(t.id)} title="Remove"
                                   className="w-9 h-9 rounded-lg border border-neutral-200 text-neutral-400 hover:text-red-500 hover:border-red-200 cursor-pointer">×</button>
                               </div>
