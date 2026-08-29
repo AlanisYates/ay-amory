@@ -1453,6 +1453,7 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
         if (!res.ok) continue
         const t = await res.json()
         ammoTypeId = t.id
+        setAmmoTypes(prev => [...prev, t])
       }
       const acqRes = await apiFetch(`/ammo/range-days/${session.id}/acquire`, {
         method: 'POST',
