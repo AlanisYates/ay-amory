@@ -465,7 +465,7 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
   const [weapons, setWeapons] = useState<Weapon[]>([])
   const [inventory, setInventory] = useState<InventoryItem[]>([])
-  const [rows, setRows] = useState<AmmoRow[]>([{ ammoTypeId: 0, quantity: 0 }])
+  const [rows, setRows] = useState<AmmoRow[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -483,7 +483,7 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
       const inv: InventoryItem[] = i.ok ? await i.json() : []
       setAmmoTypes(types); setWeapons(wps); setInventory(inv)
       const stocked = types.filter(x => (inv.find(y => y.id === x.id)?.balance ?? 0) > 0)
-      setRows([{ ammoTypeId: stocked[0]?.id ?? 0, quantity: 0 }])
+      setRows([])
       setLoading(false)
     }).catch(() => setLoading(false))
     return () => { cancelled = true }
@@ -496,8 +496,35 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
   const toggleWeapon = (id: number) => {
     setSelectedWeapons(prev => prev.includes(id) ? prev.filter(w => w !== id) : [...prev, id])
   }
-  const updateRow = (i: number, field: keyof AmmoRow, val: number) => {
-    setRows(r => r.map((row, idx) => idx === i ? { ...row, [field]: val } : row))
+  // ── Ammo "cart" helpers ──────────────────────────────────────────────
+  const toggleAmmo = (id: number) => {
+    setRows(prev => prev.some(r => r.ammoTypeId === id)
+      ? prev.filter(r => r.ammoTypeId !== id)
+      : [...prev, { ammoTypeId: id, quantity: Math.min(50, availableFor(id)) }])
+  }
+  const stepAmmo = (id: number, delta: number) => {
+    setRows(prev => prev.flatMap(r => {
+      if (r.ammoTypeId !== id) return [r]
+      const next = Math.max(0, Math.min(availableFor(id), r.quantity + delta))
+      return next === 0 ? [] : [{ ...r, quantity: next }]
+    }))
+  }
+  const setAmmoQty = (id: number, val: number) => {
+    if (!Number.isFinite(val) || val <= 0) { setRows(prev => prev.filter(r => r.ammoTypeId !== id)); return }
+    const clamped = Math.min(availableFor(id), Math.floor(val))
+    setRows(prev => prev.some(r => r.ammoTypeId === id)
+      ? prev.map(r => r.ammoTypeId === id ? { ...r, quantity: clamped } : r)
+      : [...prev, { ammoTypeId: id, quantity: clamped }])
+  }
+  const handleAmmoKey = (e: React.KeyboardEvent, id: number) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+      e.preventDefault()
+      if (!rows.some(r => r.ammoTypeId === id)) toggleAmmo(id)
+      else stepAmmo(id, 50)
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+      e.preventDefault()
+      stepAmmo(id, -50)
+    }
   }
 
   const submit = async (e: React.FormEvent) => {
@@ -612,39 +639,49 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
 
                 <div>
                   <p className="text-sm font-medium text-neutral-700 mb-2">Ammo to take</p>
-                  {rows.map((row, i) => {
-                    const avail = availableFor(row.ammoTypeId)
-                    const over = row.quantity > avail
-                    return (
-                      <div key={i} className="mb-2">
-                        <div className="flex gap-2 items-center">
-                          <select value={row.ammoTypeId} onChange={e => updateRow(i, 'ammoTypeId', Number(e.target.value))}
-                            className="flex-1 px-3 py-2 border rounded-lg text-sm">
-                            {stockedTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                          </select>
-                          <input type="number" min="1" placeholder="Qty" value={row.quantity || ''}
-                            onChange={e => updateRow(i, 'quantity', Number(e.target.value))}
-                            className={`w-24 px-3 py-2 border rounded-lg text-sm ${over ? 'border-red-400' : ''}`} />
-                          {rows.length > 1 && (
-                            <button type="button" onClick={() => setRows(r => r.filter((_, idx) => idx !== i))}
-                              className="text-neutral-400 hover:text-red-500 cursor-pointer text-lg leading-none">&times;</button>
-                          )}
-                        </div>
-                        <p className={`text-xs mt-1 ${over ? 'text-red-500' : 'text-neutral-400'}`}>
-                          {over
-                            ? `Only ${avail.toLocaleString()} in storage`
-                            : `In storage: ${avail.toLocaleString()}`}
-                        </p>
-                      </div>
-                    )
-                  })}
-                  <button type="button" onClick={() => setRows(r => [...r, { ammoTypeId: stockedTypes[0]?.id ?? 0, quantity: 0 }])}
-                    className="text-sm text-neutral-500 hover:text-neutral-700 cursor-pointer text-left">
-                    + Add Another Caliber
-                  </button>
-                  {stockedTypes.length === 0 && (
+                  {stockedTypes.length === 0 ? (
                     <p className="text-xs text-neutral-400 mt-2">No rounds in storage — add inventory on the Ammo tab first.</p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {stockedTypes.map(t => {
+                        const row = rows.find(r => r.ammoTypeId === t.id)
+                        const inCart = !!row
+                        const qty = row?.quantity ?? 0
+                        const avail = availableFor(t.id)
+                        const over = qty > avail
+                        return (
+                          <div key={t.id} tabIndex={0} onKeyDown={e => handleAmmoKey(e, t.id)}
+                            onClick={() => { if (!inCart) toggleAmmo(t.id) }}
+                            className={`rounded-xl border p-4 flex items-center justify-between gap-3 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-black ${
+                              inCart ? 'border-black bg-neutral-50' : 'border-neutral-200 bg-white hover:border-neutral-400'
+                            }`}>
+                            <div>
+                              <p className="font-semibold text-neutral-900">{t.name}</p>
+                              <p className={`text-xs mt-0.5 ${over ? 'text-red-500' : 'text-neutral-400'}`}>
+                                {t.caliber} · {avail.toLocaleString()} in storage
+                              </p>
+                            </div>
+                            {inCart ? (
+                              <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                <button type="button" onClick={() => stepAmmo(t.id, -50)}
+                                  className="w-9 h-9 rounded-lg border border-neutral-300 text-neutral-700 hover:bg-neutral-100 cursor-pointer">−50</button>
+                                <input type="number" min="0" value={qty} inputMode="numeric"
+                                  onChange={e => setAmmoQty(t.id, Number(e.target.value))}
+                                  className={`w-20 px-2 py-1.5 border rounded-lg text-sm text-center ${over ? 'border-red-400' : 'border-neutral-300'}`} />
+                                <button type="button" onClick={() => stepAmmo(t.id, 50)}
+                                  className="w-9 h-9 rounded-lg border border-neutral-300 text-neutral-700 hover:bg-neutral-100 cursor-pointer">+50</button>
+                                <button type="button" onClick={() => toggleAmmo(t.id)} title="Remove"
+                                  className="w-9 h-9 rounded-lg border border-neutral-200 text-neutral-400 hover:text-red-500 hover:border-red-200 cursor-pointer">×</button>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-neutral-400">Tap to add</span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
                   )}
+                  <p className="text-xs text-neutral-400 mt-2">Tip: focus an ammo card and use ↑/↓ (or ←/→) to adjust by 50.</p>
                 </div>
 
                 {error && <p className="text-red-500 text-sm">{error}</p>}
