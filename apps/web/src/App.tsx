@@ -811,22 +811,23 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   const totalLoaded = loaded.reduce((s, g) => s + g.rounds, 0)
   const fired = strings.filter(s => s.weaponId === weapon.id).reduce((s, x) => s + x.rounds, 0)
 
-  // Selectable ammo types depend on the current stage (bag in Load, gun in Shoot)
-  const selectOptions = stage === 'shoot' ? loaded.filter(g => g.rounds > 0) : bag
-  const selectedValid = selectOptions.some(o => o.ammoTypeId === ammoTypeId)
-  const activeTypeId = selectedValid ? ammoTypeId : (selectOptions[0]?.ammoTypeId ?? 0)
-  // In the Load stage, auto-pick the first in-stock ammo whose caliber matches the
-  // weapon so the user never has to choose. Falls back to the manual select otherwise.
+  // In the Load stage, only ever offer caliber-matching, in-stock ammo — never
+  // mismatched calibers, even when nothing matches.
   const availableMatch = bag.filter(b => {
     const t = typeForId(b.ammoTypeId)
     return !!t && t.caliber === weapon.caliber && b.inBag > 0
   })
-  // Only auto-pick when there's a single unambiguous match; with multiple matches the
-  // user should choose which ammo they're actually shooting.
+
+  // Selectable ammo types depend on the current stage (matching bag in Load, gun in Shoot)
+  const selectOptions = stage === 'shoot' ? loaded.filter(g => g.rounds > 0) : availableMatch
+  const selectedValid = selectOptions.some(o => o.ammoTypeId === ammoTypeId)
+  const activeTypeId = selectedValid ? ammoTypeId : (selectOptions[0]?.ammoTypeId ?? 0)
+
+  // Auto-pick when there's a single unambiguous match; otherwise the user chooses
+  // among the matching types in the dropdown.
   const autoMatch = availableMatch.length === 1 ? availableMatch[0] : null
   const loadTypeId = autoMatch ? autoMatch.ammoTypeId : activeTypeId
   const ammo = typeForId(stage === 'load' ? loadTypeId : activeTypeId)
-  const mismatch = !!ammo && weapon.caliber !== ammo.caliber
 
   const inBag = bag.find(b => b.ammoTypeId === loadTypeId)?.inBag ?? 0
   const loadedForAmmo = loaded.find(g => g.ammoTypeId === activeTypeId)?.rounds ?? 0
@@ -910,38 +911,29 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
               <p className="text-sm text-neutral-600">
                 Ammo: <span className="font-medium">{ammo?.name ?? `Type #${loadTypeId}`}</span>
               </p>
-            ) : (
+            ) : availableMatch.length > 0 ? (
               <select value={ammoTypeId} onChange={e => { setAmmoTypeId(Number(e.target.value)); setRounds(0) }}
                 className="px-3 py-2 border rounded-lg text-sm w-full">
-                {bag.length === 0 && <option value={0}>No ammo in bag</option>}
-                {(availableMatch.length > 0 ? availableMatch : bag).map(b => {
+                {availableMatch.map(b => {
                   const t = typeForId(b.ammoTypeId)
                   return <option key={b.ammoTypeId} value={b.ammoTypeId}>{t?.name ?? `Type #${b.ammoTypeId}`} ({b.inBag})</option>
                 })}
               </select>
+            ) : (
+              <p className="text-sm text-neutral-500">No matching ammo in the bag.</p>
             )}
 
-            {mismatch && (
-              <p className="text-amber-600 text-xs">
-                ⚠ Caliber mismatch: {weapon.name} is {weapon.caliber}, ammo is {ammo?.caliber}.
-              </p>
-            )}
-
-            <QuickAdd rounds={rounds} cap={cap} onChange={setRoundsClamped} onStep={step} />
+            <QuickAdd rounds={rounds} cap={cap} onChange={setRoundsClamped} onStep={step}
+              onMax={inBag > 0 ? () => setRoundsClamped(inBag) : undefined} />
 
             <input type="text" placeholder="Note (optional)" value={note}
               onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm w-full" />
 
             {error && <p className="text-red-500 text-xs">{error}</p>}
 
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => act('load')}
-                disabled={rounds === 0 || inBag === 0}
-                className="px-3 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Load</button>
-              <button type="button" onClick={() => act('load', true)}
-                disabled={inBag === 0}
-                className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Load All ({inBag})</button>
-            </div>
+            <button type="button" onClick={() => act('load')}
+              disabled={rounds === 0 || inBag === 0}
+              className="w-full px-3 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Load</button>
           </>
         )}
 
@@ -1004,11 +996,12 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   )
 }
 
-function QuickAdd({ rounds, cap, onChange, onStep }: {
+function QuickAdd({ rounds, cap, onChange, onStep, onMax }: {
   rounds: number
   cap: number
   onChange: (n: number) => void
   onStep: (d: number) => void
+  onMax?: () => void
 }) {
   return (
     <div>
@@ -1017,6 +1010,10 @@ function QuickAdd({ rounds, cap, onChange, onStep }: {
           <button type="button" key={n} onClick={() => onChange(rounds + n)} disabled={rounds + n > cap}
             className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+{n}</button>
         ))}
+        {onMax && (
+          <button type="button" onClick={onMax} disabled={cap === 0}
+            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">All</button>
+        )}
       </div>
       <div className="flex items-center gap-1 mt-2">
         <button type="button" onClick={() => onStep(-1)} disabled={rounds <= 0}
