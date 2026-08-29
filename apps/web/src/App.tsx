@@ -492,6 +492,14 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
   const balanceByType = new Map(inventory.map(i => [i.id, i.balance]))
   const availableFor = (ammoTypeId: number) => balanceByType.get(ammoTypeId) ?? 0
   const stockedTypes = ammoTypes.filter(t => availableFor(t.id) > 0)
+  // Only offer ammo whose caliber matches a weapon the user put in their range bag
+  // (Step 1). If no weapons were picked, fall back to showing all stocked ammo.
+  const bagCalibers = new Set(
+    weapons.filter(w => selectedWeapons.includes(w.id)).map(w => w.caliber)
+  )
+  const ammoStepTypes = bagCalibers.size > 0
+    ? stockedTypes.filter(t => bagCalibers.has(t.caliber))
+    : stockedTypes
 
   const toggleWeapon = (id: number) => {
     setSelectedWeapons(prev => prev.includes(id) ? prev.filter(w => w !== id) : [...prev, id])
@@ -629,11 +637,15 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
 
                 <div>
                   <p className="text-sm font-medium text-neutral-700 mb-2">Ammo to take</p>
-                  {stockedTypes.length === 0 ? (
-                    <p className="text-xs text-neutral-400 mt-2">No rounds in storage — add inventory on the Ammo tab first.</p>
+                  {ammoStepTypes.length === 0 ? (
+                    <p className="text-xs text-neutral-400 mt-2">
+                      {bagCalibers.size > 0
+                        ? 'No ammo in storage matches the calibers of the weapons in your range bag.'
+                        : 'No rounds in storage — add inventory on the Ammo tab first.'}
+                    </p>
                   ) : (
                     <div className="flex flex-col gap-2">
-                      {stockedTypes.map(t => {
+                      {ammoStepTypes.map(t => {
                         const row = rows.find(r => r.ammoTypeId === t.id)
                         const inCart = !!row
                         const qty = row?.quantity ?? 0
