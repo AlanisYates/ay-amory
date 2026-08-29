@@ -795,12 +795,13 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   // Keep a sensible default selection as the bag / gun changes for the current stage
   useEffect(() => {
     if (stage === 'load') {
-      const match = bag.find(b => {
-        const t = typeForId(b.ammoTypeId)
-        return !!t && t.caliber === weapon.caliber && b.inBag > 0
-      })
-      if (match && ammoTypeId !== match.ammoTypeId) setAmmoTypeId(match.ammoTypeId)
-      else if (!bag.some(b => b.ammoTypeId === ammoTypeId) && bag[0]) setAmmoTypeId(bag[0].ammoTypeId)
+      if (!bag.some(b => b.ammoTypeId === ammoTypeId)) {
+        const matches = bag.filter(b => {
+          const t = typeForId(b.ammoTypeId)
+          return !!t && t.caliber === weapon.caliber && b.inBag > 0
+        })
+        setAmmoTypeId(matches.length > 0 ? matches[0].ammoTypeId : (bag[0]?.ammoTypeId ?? 0))
+      }
     } else if (stage === 'shoot') {
       if (loaded.length && !loaded.some(g => g.ammoTypeId === ammoTypeId)) setAmmoTypeId(loaded[0].ammoTypeId)
     }
@@ -820,7 +821,10 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
     const t = typeForId(b.ammoTypeId)
     return !!t && t.caliber === weapon.caliber && b.inBag > 0
   })
-  const loadTypeId = availableMatch.length > 0 ? availableMatch[0].ammoTypeId : activeTypeId
+  // Only auto-pick when there's a single unambiguous match; with multiple matches the
+  // user should choose which ammo they're actually shooting.
+  const autoMatch = availableMatch.length === 1 ? availableMatch[0] : null
+  const loadTypeId = autoMatch ? autoMatch.ammoTypeId : activeTypeId
   const ammo = typeForId(stage === 'load' ? loadTypeId : activeTypeId)
   const mismatch = !!ammo && weapon.caliber !== ammo.caliber
 
@@ -921,7 +925,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
       <div className="mt-3 space-y-3">
         {stage === 'load' && (
           <>
-            {availableMatch.length > 0 ? (
+            {autoMatch ? (
               <p className="text-sm text-neutral-600">
                 Ammo: <span className="font-medium">{ammo?.name ?? `Type #${loadTypeId}`}</span>
               </p>
@@ -929,7 +933,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
               <select value={ammoTypeId} onChange={e => { setAmmoTypeId(Number(e.target.value)); setRounds(0) }}
                 className="px-3 py-2 border rounded-lg text-sm w-full">
                 {bag.length === 0 && <option value={0}>No ammo in bag</option>}
-                {bag.map(b => {
+                {(availableMatch.length > 0 ? availableMatch : bag).map(b => {
                   const t = typeForId(b.ammoTypeId)
                   return <option key={b.ammoTypeId} value={b.ammoTypeId}>{t?.name ?? `Type #${b.ammoTypeId}`} ({b.inBag})</option>
                 })}
