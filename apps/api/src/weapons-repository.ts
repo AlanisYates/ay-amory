@@ -1,5 +1,5 @@
-import { db, weapons, rangeDayStrings, rangeDaySessions, ammoTypes } from '@ay-armory/db'
-import { eq, and, asc, sql } from 'drizzle-orm'
+import { db, weapons, weaponCleanings, rangeDayStrings, rangeDaySessions, ammoTypes } from '@ay-armory/db'
+import { eq, and, asc, desc, sql } from 'drizzle-orm'
 
 export type Weapon = typeof weapons.$inferSelect
 
@@ -109,6 +109,17 @@ export type UpdateWeaponData = {
   type?: string
   serialNumber?: string | null
   notes?: string | null
+  cleaningIntervalRounds?: number | null
+  cleaningIntervalDays?: number | null
+}
+
+export type WeaponCleaning = typeof weaponCleanings.$inferSelect
+export type CreateCleaningData = {
+  weaponId: number
+  userId: number
+  cleanedAt?: Date
+  roundCountAtCleaning: number
+  note?: string | null
 }
 
 export const weaponsRepository = {
@@ -193,5 +204,43 @@ export const weaponsRepository = {
       .where(eq(rangeDaySessions.userId, userId))
       .groupBy(rangeDayStrings.weaponId)
     return rows.map(r => ({ weaponId: r.weaponId, totalRounds: Number(r.total) }))
+  },
+
+  async listCleanings(weaponId: number, userId: number): Promise<WeaponCleaning[]> {
+    return db
+      .select()
+      .from(weaponCleanings)
+      .where(and(eq(weaponCleanings.weaponId, weaponId), eq(weaponCleanings.userId, userId)))
+      .orderBy(desc(weaponCleanings.cleanedAt))
+  },
+
+  async getLatestCleaning(weaponId: number, userId: number): Promise<WeaponCleaning | null> {
+    const [row] = await db
+      .select()
+      .from(weaponCleanings)
+      .where(and(eq(weaponCleanings.weaponId, weaponId), eq(weaponCleanings.userId, userId)))
+      .orderBy(desc(weaponCleanings.cleanedAt))
+      .limit(1)
+    return row ?? null
+  },
+
+  async createCleaning(data: CreateCleaningData): Promise<WeaponCleaning> {
+    const [row] = await db
+      .insert(weaponCleanings)
+      .values({
+        weaponId: data.weaponId,
+        userId: data.userId,
+        cleanedAt: data.cleanedAt ?? new Date(),
+        roundCountAtCleaning: data.roundCountAtCleaning,
+        note: data.note ?? null,
+      })
+      .returning()
+    return row
+  },
+
+  async deleteCleaning(id: number, weaponId: number, userId: number): Promise<void> {
+    await db
+      .delete(weaponCleanings)
+      .where(and(eq(weaponCleanings.id, id), eq(weaponCleanings.weaponId, weaponId), eq(weaponCleanings.userId, userId)))
   },
 }

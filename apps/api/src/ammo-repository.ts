@@ -333,6 +333,8 @@ export const ammoRepository = {
         type: weapons.type,
         serialNumber: weapons.serialNumber,
         notes: weapons.notes,
+        cleaningIntervalRounds: weapons.cleaningIntervalRounds,
+        cleaningIntervalDays: weapons.cleaningIntervalDays,
         createdAt: weapons.createdAt,
         updatedAt: weapons.updatedAt,
       })

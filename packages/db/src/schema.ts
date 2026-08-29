@@ -78,6 +78,18 @@ export const weapons = pgTable('weapons', {
   type: text('type').notNull(), // handgun | rifle | shotgun
   serialNumber: text('serial_number'),
   notes: text('notes'),
+  cleaningIntervalRounds: integer('cleaning_interval_rounds'),
+  cleaningIntervalDays: integer('cleaning_interval_days'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
+export const weaponCleanings = pgTable('weapon_cleanings', {
+  id: serial('id').primaryKey(),
+  weaponId: integer('weapon_id').notNull().references(() => weapons.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id),
+  cleanedAt: timestamp('cleaned_at').notNull(),
+  roundCountAtCleaning: integer('round_count_at_cleaning').notNull(),
+  note: text('note'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 })

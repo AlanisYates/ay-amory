@@ -65,6 +65,46 @@ weapons.get('/:id/history', async (c) => {
   return c.json(history)
 })
 
+weapons.get('/:id/cleanings', async (c) => {
+  const userId = getUserId(c)
+  const id = Number(c.req.param('id'))
+  const weapon = await weaponsRepository.getWeapon(id, userId)
+  if (!weapon) return c.json({ error: 'Not found' }, 404)
+  return c.json(await weaponsRepository.listCleanings(id, userId))
+})
+
+weapons.post('/:id/cleanings', async (c) => {
+  const userId = getUserId(c)
+  const id = Number(c.req.param('id'))
+  const weapon = await weaponsRepository.getWeapon(id, userId)
+  if (!weapon) return c.json({ error: 'Not found' }, 404)
+  const body = await c.req.json()
+  const history = await weaponsRepository.getWeaponFiringHistory(id, userId)
+  const totalRounds = history?.totalRounds ?? 0
+  const roundCount = body.roundCountAtCleaning != null ? Number(body.roundCountAtCleaning) : totalRounds
+  if (!Number.isFinite(roundCount) || roundCount < 0) return c.json({ error: 'roundCountAtCleaning must be a non-negative number' }, 400)
+  const cleanedAt = body.cleanedAt ? new Date(body.cleanedAt) : new Date()
+  if (isNaN(cleanedAt.getTime())) return c.json({ error: 'Invalid cleanedAt' }, 400)
+  const row = await weaponsRepository.createCleaning({
+    weaponId: id,
+    userId,
+    cleanedAt,
+    roundCountAtCleaning: roundCount,
+    note: body.note ?? null,
+  })
+  return c.json(row, 201)
+})
+
+weapons.delete('/:id/cleanings/:cleaningId', async (c) => {
+  const userId = getUserId(c)
+  const id = Number(c.req.param('id'))
+  const cleaningId = Number(c.req.param('cleaningId'))
+  const weapon = await weaponsRepository.getWeapon(id, userId)
+  if (!weapon) return c.json({ error: 'Not found' }, 404)
+  await weaponsRepository.deleteCleaning(cleaningId, id, userId)
+  return new Response(null, { status: 204 })
+})
+
 weapons.get('/:id', async (c) => {
   const userId = getUserId(c)
   const id = Number(c.req.param('id'))
