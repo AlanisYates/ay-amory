@@ -516,16 +516,6 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
       ? prev.map(r => r.ammoTypeId === id ? { ...r, quantity: clamped } : r)
       : [...prev, { ammoTypeId: id, quantity: clamped }])
   }
-  const handleAmmoKey = (e: React.KeyboardEvent, id: number) => {
-    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
-      e.preventDefault()
-      if (!rows.some(r => r.ammoTypeId === id)) toggleAmmo(id)
-      else stepAmmo(id, 50)
-    } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
-      e.preventDefault()
-      stepAmmo(id, -50)
-    }
-  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -650,9 +640,9 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
                         const avail = availableFor(t.id)
                         const over = qty > avail
                         return (
-                          <div key={t.id} tabIndex={0} onKeyDown={e => handleAmmoKey(e, t.id)}
+                          <div key={t.id}
                             onClick={() => { if (!inCart) toggleAmmo(t.id) }}
-                            className={`rounded-xl border p-4 flex items-center justify-between gap-3 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-black ${
+                            className={`rounded-xl border p-4 flex items-center justify-between gap-3 transition-colors cursor-pointer ${
                               inCart ? 'border-black bg-neutral-50' : 'border-neutral-200 bg-white hover:border-neutral-400'
                             }`}>
                             <div>
@@ -662,26 +652,22 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
                               </p>
                             </div>
                             {inCart ? (
-                              <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                <button type="button" onClick={() => stepAmmo(t.id, -50)}
-                                  className="w-9 h-9 rounded-lg border border-neutral-300 text-neutral-700 hover:bg-neutral-100 cursor-pointer">−50</button>
-                                <input type="number" min="0" value={qty} inputMode="numeric"
-                                  onChange={e => setAmmoQty(t.id, Number(e.target.value))}
-                                  className={`w-20 px-2 py-1.5 border rounded-lg text-sm text-center ${over ? 'border-red-400' : 'border-neutral-300'}`} />
-                                <button type="button" onClick={() => stepAmmo(t.id, 50)}
-                                  className="w-9 h-9 rounded-lg border border-neutral-300 text-neutral-700 hover:bg-neutral-100 cursor-pointer">+50</button>
+                              <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+                                <QuickAdd rounds={qty} cap={avail}
+                                  onChange={(n) => setAmmoQty(t.id, n)}
+                                  onStep={(d) => stepAmmo(t.id, d)}
+                                  steps={[50]} step={50} />
                                 <button type="button" onClick={() => toggleAmmo(t.id)} title="Remove"
                                   className="w-9 h-9 rounded-lg border border-neutral-200 text-neutral-400 hover:text-red-500 hover:border-red-200 cursor-pointer">×</button>
                               </div>
                             ) : (
-                              <span className="text-sm text-neutral-400">Tap to add</span>
+                              <span className="text-sm text-neutral-400">Add</span>
                             )}
                           </div>
                         )
                       })}
                     </div>
                   )}
-                  <p className="text-xs text-neutral-400 mt-2">Tip: focus an ammo card and use ↑/↓ (or ←/→) to adjust by 50.</p>
                 </div>
 
                 {error && <p className="text-red-500 text-sm">{error}</p>}
@@ -1101,17 +1087,19 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   )
 }
 
-function QuickAdd({ rounds, cap, onChange, onStep, onMax }: {
+function QuickAdd({ rounds, cap, onChange, onStep, onMax, steps = [5, 10, 30], step = 1 }: {
   rounds: number
   cap: number
   onChange: (n: number) => void
   onStep: (d: number) => void
   onMax?: () => void
+  steps?: number[]
+  step?: number
 }) {
   return (
     <div>
       <div className="flex flex-wrap gap-2">
-        {[5, 10, 30].map(n => (
+        {steps.map(n => (
           <button type="button" key={n} onClick={() => onChange(rounds + n)} disabled={rounds + n > cap}
             className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+{n}</button>
         ))}
@@ -1121,12 +1109,12 @@ function QuickAdd({ rounds, cap, onChange, onStep, onMax }: {
         )}
       </div>
       <div className="flex items-center gap-1 mt-2">
-        <button type="button" onClick={() => onStep(-1)} disabled={rounds <= 0}
+        <button type="button" onClick={() => onStep(-step)} disabled={rounds <= 0}
           className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">−</button>
         <input type="number" min="0" value={rounds} inputMode="numeric"
           onChange={e => onChange(Number(e.target.value))}
           className="w-16 px-2 py-1.5 border rounded-lg text-sm text-center" />
-        <button type="button" onClick={() => onStep(1)} disabled={rounds >= cap}
+        <button type="button" onClick={() => onStep(step)} disabled={rounds >= cap}
           className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+</button>
       </div>
       {rounds === 0 && <p className="text-xs text-neutral-400 mt-1">No rounds selected</p>}
