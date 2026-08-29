@@ -1908,24 +1908,33 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         )}
 
         {/* Quick Action Buttons */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          {([
-            { key: 'acquire', label: '+ Acquire' },
-            { key: 'expend', label: '- Expend' },
-            { key: 'range-day', label: '⇄ Range Day' },
-            { key: 'adjust', label: '↻ Adjust' },
-            { key: 'new-type', label: '+ New Type' },
-          ] as { key: QuickAction; label: string }[]).map(({ key, label }) => (
-            <button key={key}
-              onClick={() => setActiveAction(activeAction === key ? null : key)}
-              className={`px-4 py-2 rounded-lg text-sm border transition-colors cursor-pointer ${
-                activeAction === key
-                  ? 'bg-black text-white border-black'
-                  : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'
-              }`}>
-              {label}
-            </button>
-          ))}
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+          <div className="flex flex-wrap gap-2">
+            {([
+              { key: 'acquire', label: '+ Acquire' },
+              { key: 'expend', label: '- Expend' },
+              { key: 'adjust', label: '↻ Adjust' },
+              { key: 'new-type', label: '+ New Type' },
+            ] as { key: QuickAction; label: string }[]).map(({ key, label }) => (
+              <button key={key}
+                onClick={() => setActiveAction(activeAction === key ? null : key)}
+                className={`px-4 py-2 rounded-lg text-sm border transition-colors cursor-pointer ${
+                  activeAction === key
+                    ? 'bg-black text-white border-black'
+                    : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setActiveAction(activeAction === 'range-day' ? null : 'range-day')}
+            className={`px-6 py-3 rounded-xl text-base font-semibold shadow-sm transition-colors cursor-pointer ${
+              activeAction === 'range-day' ? 'bg-green-700 text-white' : 'bg-green-600 text-white hover:bg-green-700'
+            }`}>
+            ⇄ Start Range Day
+          </button>
         </div>
 
         {/* Quick Action Forms */}
