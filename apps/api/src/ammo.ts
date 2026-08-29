@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { jwt } from 'hono/jwt'
+import { HTTPException } from 'hono/http-exception'
 import { ammoRepository } from './ammo-repository'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
@@ -12,6 +13,9 @@ const ammo = new Hono()
 ammo.use('/*', jwt({ secret: JWT_SECRET, alg: 'HS256' }))
 
 ammo.onError((err, c) => {
+  if (err instanceof HTTPException) {
+    return c.json({ error: err.message }, err.status)
+  }
   console.error(err)
   return c.json({ error: 'Internal server error' }, 500)
 })
@@ -188,14 +192,40 @@ ammo.post('/range-days', async (c) => {
     return c.json({ error: 'ammo is required and must be a non-empty array' }, 400)
   }
 
+  // Aggregate requested quantities per ammo type (guard against duplicates / bad input)
+  const totalsByType = new Map<number, number>()
+  for (const item of ammoItems) {
+    if (!item?.ammoTypeId || !(item.quantity > 0)) {
+      return c.json({ error: 'Each ammo item requires a positive ammoTypeId and quantity' }, 400)
+    }
+    totalsByType.set(item.ammoTypeId, (totalsByType.get(item.ammoTypeId) ?? 0) + item.quantity)
+  }
+
+  // Reject if any type requests more than is in storage (no negative storage)
+  const inventory = await ammoRepository.getInventory(userId)
+  const balanceByType = new Map(inventory.map(i => [i.id, i.balance]))
+  for (const [ammoTypeId, qty] of totalsByType) {
+    const available = balanceByType.get(ammoTypeId) ?? 0
+    if (qty > available) {
+      return c.json(
+        { error: `Not enough ammo (type ${ammoTypeId}) in storage: have ${available}, requested ${qty}` },
+        422,
+      )
+    }
+  }
+
   // Create the session first
   const session = await ammoRepository.createRangeDaySession({ userId, note })
 
+  // Record the guns brought to this session (optional)
+  const weapons = Array.isArray(body.weapons) ? body.weapons.map((w: number) => Number(w)) : []
+  await ammoRepository.createRangeDayWeapons(session.id, weapons)
+
   // Build entries: for each ammo type, -qty from storage, +qty into bag
   const occurredAt = new Date().toISOString()
-  const entries = ammoItems.flatMap((item: { ammoTypeId: number; quantity: number }) => [
-    { ammoTypeId: item.ammoTypeId, quantity: -item.quantity, location: 'storage', isBalancing: false },
-    { ammoTypeId: item.ammoTypeId, quantity: item.quantity, location: 'bag', isBalancing: false },
+  const entries = [...totalsByType.entries()].flatMap(([ammoTypeId, qty]) => [
+    { ammoTypeId, quantity: -qty, location: 'storage', isBalancing: false },
+    { ammoTypeId, quantity: qty, location: 'bag', isBalancing: false },
   ])
 
   const tx = await ammoRepository.createTransactionWithEntries({
@@ -208,8 +238,9 @@ ammo.post('/range-days', async (c) => {
   })
 
   const bag = await ammoRepository.getBagContents(session.id)
+  const broughtWeapons = await ammoRepository.listRangeDayWeapons(session.id)
 
-  return c.json({ ...session, bag, transactions: [tx] }, 201)
+  return c.json({ ...session, bag, weapons: broughtWeapons, transactions: [tx] }, 201)
 })
 
 // GET /ammo/range-days
@@ -227,7 +258,15 @@ ammo.get('/range-days/:id', async (c) => {
   if (!session) return c.json({ error: 'Not found' }, 404)
 
   const bag = await ammoRepository.getBagContents(id)
-  return c.json({ ...session, bag })
+  const weapons = await ammoRepository.listRangeDayWeapons(id)
+  const strings = await ammoRepository.listRangeDayStrings(id)
+  const gunLoadedMap = await ammoRepository.getGunLoaded(id)
+  const gunLoaded = Array.from(gunLoadedMap.entries()).map(([key, rounds]) => {
+    const [weaponId, ammoTypeId] = key.split(':').map(Number)
+    return { weaponId, ammoTypeId, rounds }
+  })
+
+  return c.json({ ...session, bag, weapons, strings, gunLoaded })
 })
 
 // POST /ammo/range-days/:id/acquire  — on-site purchase
@@ -271,6 +310,97 @@ ammo.post('/range-days/:id/acquire', async (c) => {
   return c.json({ transaction: tx, bag })
 })
 
+// ── Load / Shoot / Return (live shooting flow) ────────────────────────────
+
+function gunLoadedToArr(map: Map<string, number>) {
+  return Array.from(map.entries()).map(([key, rounds]) => {
+    const [weaponId, ammoTypeId] = key.split(':').map(Number)
+    return { weaponId, ammoTypeId, rounds }
+  })
+}
+
+ammo.post('/range-days/:id/load', async (c) => {
+  const userId = getUserId(c)
+  const id = Number(c.req.param('id'))
+  const session = await ammoRepository.getRangeDaySession(id, userId)
+  if (!session) return c.json({ error: 'Not found' }, 404)
+  if (session.endedAt != null) return c.json({ error: 'Session already ended' }, 409)
+  const body = await c.req.json()
+  const { weaponId, ammoTypeId, rounds } = body
+  if (!weaponId || !ammoTypeId || !rounds || rounds <= 0) {
+    return c.json({ error: 'weaponId, ammoTypeId, and positive rounds are required' }, 400)
+  }
+  try {
+    await ammoRepository.createLoad({ userId, sessionId: id, weaponId: Number(weaponId), ammoTypeId: Number(ammoTypeId), rounds: Number(rounds) })
+  } catch {
+    return c.json({ error: 'Not enough ammo in bag' }, 422)
+  }
+  const bag = await ammoRepository.getBagContents(id)
+  const gunLoaded = gunLoadedToArr(await ammoRepository.getGunLoaded(id))
+  return c.json({ bag, gunLoaded })
+})
+
+ammo.post('/range-days/:id/shoot', async (c) => {
+  const userId = getUserId(c)
+  const id = Number(c.req.param('id'))
+  const session = await ammoRepository.getRangeDaySession(id, userId)
+  if (!session) return c.json({ error: 'Not found' }, 404)
+  if (session.endedAt != null) return c.json({ error: 'Session already ended' }, 409)
+  const body = await c.req.json()
+  const { weaponId, ammoTypeId, rounds, note, occurredAt } = body
+  if (!weaponId || !ammoTypeId || !rounds || rounds <= 0) {
+    return c.json({ error: 'weaponId, ammoTypeId, and positive rounds are required' }, 400)
+  }
+  let str
+  try {
+    str = await ammoRepository.createShoot({ userId, sessionId: id, weaponId: Number(weaponId), ammoTypeId: Number(ammoTypeId), rounds: Number(rounds), note: note ?? null, occurredAt })
+  } catch {
+    return c.json({ error: 'Not enough loaded ammo for this weapon/ammo' }, 422)
+  }
+  const bag = await ammoRepository.getBagContents(id)
+  const gunLoaded = gunLoadedToArr(await ammoRepository.getGunLoaded(id))
+  return c.json({ string: str, bag, gunLoaded })
+})
+
+ammo.post('/range-days/:id/return', async (c) => {
+  const userId = getUserId(c)
+  const id = Number(c.req.param('id'))
+  const session = await ammoRepository.getRangeDaySession(id, userId)
+  if (!session) return c.json({ error: 'Not found' }, 404)
+  if (session.endedAt != null) return c.json({ error: 'Session already ended' }, 409)
+  const body = await c.req.json()
+  const { weaponId, ammoTypeId, rounds } = body
+  if (!weaponId || !ammoTypeId || !rounds || rounds <= 0) {
+    return c.json({ error: 'weaponId, ammoTypeId, and positive rounds are required' }, 400)
+  }
+  try {
+    await ammoRepository.createReturn({ userId, sessionId: id, weaponId: Number(weaponId), ammoTypeId: Number(ammoTypeId), rounds: Number(rounds) })
+  } catch {
+    return c.json({ error: 'Not enough loaded ammo to return' }, 422)
+  }
+  const bag = await ammoRepository.getBagContents(id)
+  const gunLoaded = gunLoadedToArr(await ammoRepository.getGunLoaded(id))
+  return c.json({ bag, gunLoaded })
+})
+
+ammo.delete('/range-days/:id/strings/:stringId', async (c) => {
+  const userId = getUserId(c)
+  const id = Number(c.req.param('id'))
+  const stringId = Number(c.req.param('stringId'))
+  const session = await ammoRepository.getRangeDaySession(id, userId)
+  if (!session) return c.json({ error: 'Not found' }, 404)
+  if (session.endedAt != null) return c.json({ error: 'Session already ended' }, 409)
+  try {
+    await ammoRepository.deleteRangeDayString(stringId, userId)
+  } catch {
+    return c.json({ error: 'String not found' }, 404)
+  }
+  const bag = await ammoRepository.getBagContents(id)
+  const gunLoaded = gunLoadedToArr(await ammoRepository.getGunLoaded(id))
+  const strings = await ammoRepository.listRangeDayStrings(id)
+  return c.json({ bag, gunLoaded, strings })
+})
+
 // POST /ammo/range-days/:id/end  — end session
 ammo.post('/range-days/:id/end', async (c) => {
   const userId = getUserId(c)
@@ -280,10 +410,25 @@ ammo.post('/range-days/:id/end', async (c) => {
   if (session.endedAt != null) return c.json({ error: 'Session already ended' }, 409)
 
   const body = await c.req.json()
-  const { returnAmmo = [] } = body
+  const { returnAmmo: providedReturn } = body
 
   // Get current bag contents
   const bagContents = await ammoRepository.getBagContents(id)
+
+  // New shoot-tracked flow omits returnAmmo → return everything still in the bag.
+  // Legacy flow supplies it → keeps the derived-expenditure behavior (and tests).
+  const returnAmmo = providedReturn ?? bagContents.map(b => ({ ammoTypeId: b.ammoTypeId, quantity: b.inBag }))
+
+  // Any ammo still loaded in a gun (not shot, not returned) must go back to
+  // storage at end-of-day, otherwise it vanishes from the ledger. Unload it first.
+  const gunLoaded = await ammoRepository.getGunLoaded(id)
+  const unloadEntries: { ammoTypeId: number; weaponId: number; quantity: number; location: string; isBalancing: boolean }[] = []
+  for (const [key, rounds] of gunLoaded.entries()) {
+    if (rounds <= 0) continue
+    const [weaponId, ammoTypeId] = key.split(':').map(Number)
+    unloadEntries.push({ ammoTypeId, weaponId, quantity: -rounds, location: 'gun', isBalancing: false })
+    unloadEntries.push({ ammoTypeId, quantity: rounds, location: 'storage', isBalancing: false })
+  }
 
   // Build a map of inBag quantities
   const inBagMap = new Map<number, number>()
@@ -329,13 +474,14 @@ ammo.post('/range-days/:id/end', async (c) => {
 
   // Create the range_day_end transaction (only if there are entries)
   let tx = null
-  if (entries.length > 0) {
+  const allEntries = [...unloadEntries, ...entries]
+  if (allEntries.length > 0) {
     tx = await ammoRepository.createTransactionWithEntries({
       userId,
       type: 'range_day_end',
       occurredAt,
       rangeDaySessionId: id,
-      entries,
+      entries: allEntries,
     })
   }
 

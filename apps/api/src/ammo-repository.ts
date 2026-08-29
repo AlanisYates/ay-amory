@@ -1,10 +1,27 @@
-import { db, ammoTypes, ammoTransactions, ammoLedgerEntries, rangeDaySessions } from '@ay-armory/db'
+import { db, ammoTypes, ammoTransactions, ammoLedgerEntries, rangeDaySessions, rangeDayWeapons, rangeDayStrings, weapons } from '@ay-armory/db'
 import { eq, and, gte, lte, sql, inArray } from 'drizzle-orm'
 
 export type AmmoType = typeof ammoTypes.$inferSelect
 export type AmmoTransaction = typeof ammoTransactions.$inferSelect
 export type AmmoLedgerEntry = typeof ammoLedgerEntries.$inferSelect
 export type RangeDaySession = typeof rangeDaySessions.$inferSelect
+export type Weapon = typeof weapons.$inferSelect
+export type RangeDayString = typeof rangeDayStrings.$inferSelect
+
+export type GunLoadedRow = { weaponId: number | null; ammoTypeId: number; qty: number }
+
+// Pure summation of gun-location ledger rows. Ledger quantities are already
+// signed (load=+, shoot/return=−), so we sum them directly. Do NOT re-flip the
+// sign by transaction type here — that double-counts fired/returned rounds.
+export function sumGunLoaded(rows: GunLoadedRow[]): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const r of rows) {
+    if (r.weaponId == null) continue
+    const key = `${r.weaponId}:${r.ammoTypeId}`
+    map.set(key, (map.get(key) ?? 0) + Number(r.qty))
+  }
+  return map
+}
 
 export type CreateAmmoTypeData = {
   userId: number
@@ -297,5 +314,149 @@ export const ammoRepository = {
       ...tx,
       entries: entries.filter(e => e.transactionId === tx.id),
     }))
+  },
+
+  // ── Range Day Weapons (brought guns) ─────────────────────────────────────
+
+  async createRangeDayWeapons(sessionId: number, weaponIds: number[]): Promise<void> {
+    if (weaponIds.length === 0) return
+    await db.insert(rangeDayWeapons).values(weaponIds.map(w => ({ sessionId, weaponId: w })))
+  },
+
+  async listRangeDayWeapons(sessionId: number): Promise<Weapon[]> {
+    return db
+      .select({
+        id: weapons.id,
+        userId: weapons.userId,
+        name: weapons.name,
+        caliber: weapons.caliber,
+        type: weapons.type,
+        serialNumber: weapons.serialNumber,
+        notes: weapons.notes,
+        cleaningIntervalRounds: weapons.cleaningIntervalRounds,
+        cleaningIntervalDays: weapons.cleaningIntervalDays,
+        createdAt: weapons.createdAt,
+        updatedAt: weapons.updatedAt,
+      })
+      .from(rangeDayWeapons)
+      .innerJoin(weapons, eq(rangeDayWeapons.weaponId, weapons.id))
+      .where(eq(rangeDayWeapons.sessionId, sessionId))
+  },
+
+  // ── Shooting flow: Load / Shoot / Return ──────────────────────────────────
+
+  async getGunLoaded(sessionId: number): Promise<Map<string, number>> {
+    const rows = await db
+      .select({
+        weaponId: ammoLedgerEntries.weaponId,
+        ammoTypeId: ammoLedgerEntries.ammoTypeId,
+        qty: sql<number>`SUM(${ammoLedgerEntries.quantity})`,
+      })
+      .from(ammoLedgerEntries)
+      .innerJoin(ammoTransactions, eq(ammoLedgerEntries.transactionId, ammoTransactions.id))
+      .where(
+        and(
+          eq(ammoTransactions.rangeDaySessionId, sessionId),
+          eq(ammoLedgerEntries.location, 'gun'),
+          eq(ammoLedgerEntries.isBalancing, false),
+        ),
+      )
+      .groupBy(ammoLedgerEntries.weaponId, ammoLedgerEntries.ammoTypeId)
+
+    return sumGunLoaded(rows)
+  },
+
+  async createLoad(data: { userId: number; sessionId: number; weaponId: number; ammoTypeId: number; rounds: number }): Promise<void> {
+    const bag = await this.getBagContents(data.sessionId)
+    const inBag = bag.find(b => b.ammoTypeId === data.ammoTypeId)?.inBag ?? 0
+    if (data.rounds > inBag) throw new Error('overload')
+
+    await db.transaction(async (tx) => {
+      const [txRow] = await tx.insert(ammoTransactions).values({
+        userId: data.userId,
+        type: 'range_day_load',
+        occurredAt: new Date(),
+        rangeDaySessionId: data.sessionId,
+        createdAt: new Date(),
+      }).returning()
+      await tx.insert(ammoLedgerEntries).values([
+        { transactionId: txRow.id, ammoTypeId: data.ammoTypeId, quantity: -data.rounds, location: 'bag', isBalancing: false, createdAt: new Date() },
+        { transactionId: txRow.id, ammoTypeId: data.ammoTypeId, weaponId: data.weaponId, quantity: data.rounds, location: 'gun', isBalancing: false, createdAt: new Date() },
+      ])
+    })
+  },
+
+  async createShoot(data: { userId: number; sessionId: number; weaponId: number; ammoTypeId: number; rounds: number; note?: string | null; occurredAt?: string }): Promise<RangeDayString> {
+    const loaded = await this.getGunLoaded(data.sessionId)
+    const have = loaded.get(`${data.weaponId}:${data.ammoTypeId}`) ?? 0
+    if (data.rounds > have) throw new Error('overload')
+
+    const occurredAt = new Date(data.occurredAt ?? new Date().toISOString())
+    return db.transaction(async (tx) => {
+      const [txRow] = await tx.insert(ammoTransactions).values({
+        userId: data.userId,
+        type: 'range_day_shot',
+        note: data.note ?? null,
+        occurredAt,
+        rangeDaySessionId: data.sessionId,
+        createdAt: new Date(),
+      }).returning()
+      await tx.insert(ammoLedgerEntries).values([
+        { transactionId: txRow.id, ammoTypeId: data.ammoTypeId, weaponId: data.weaponId, quantity: -data.rounds, location: 'gun', isBalancing: false, createdAt: new Date() },
+        { transactionId: txRow.id, ammoTypeId: data.ammoTypeId, weaponId: data.weaponId, quantity: data.rounds, location: 'equity', isBalancing: true, createdAt: new Date() },
+      ])
+      const [str] = await tx.insert(rangeDayStrings).values({
+        sessionId: data.sessionId,
+        transactionId: txRow.id,
+        weaponId: data.weaponId,
+        ammoTypeId: data.ammoTypeId,
+        rounds: data.rounds,
+        occurredAt,
+        note: data.note ?? null,
+      }).returning()
+      return str
+    })
+  },
+
+  async createReturn(data: { userId: number; sessionId: number; weaponId: number; ammoTypeId: number; rounds: number }): Promise<void> {
+    const loaded = await this.getGunLoaded(data.sessionId)
+    const have = loaded.get(`${data.weaponId}:${data.ammoTypeId}`) ?? 0
+    if (data.rounds > have) throw new Error('overload')
+
+    await db.transaction(async (tx) => {
+      const [txRow] = await tx.insert(ammoTransactions).values({
+        userId: data.userId,
+        type: 'range_day_return',
+        occurredAt: new Date(),
+        rangeDaySessionId: data.sessionId,
+        createdAt: new Date(),
+      }).returning()
+      await tx.insert(ammoLedgerEntries).values([
+        { transactionId: txRow.id, ammoTypeId: data.ammoTypeId, weaponId: data.weaponId, quantity: -data.rounds, location: 'gun', isBalancing: false, createdAt: new Date() },
+        { transactionId: txRow.id, ammoTypeId: data.ammoTypeId, quantity: data.rounds, location: 'bag', isBalancing: false, createdAt: new Date() },
+      ])
+    })
+  },
+
+  async listRangeDayStrings(sessionId: number): Promise<RangeDayString[]> {
+    return db
+      .select()
+      .from(rangeDayStrings)
+      .where(eq(rangeDayStrings.sessionId, sessionId))
+      .orderBy(rangeDayStrings.occurredAt)
+  },
+
+  async deleteRangeDayString(id: number, userId: number): Promise<void> {
+    const [str] = await db
+      .select({ id: rangeDayStrings.id, transactionId: rangeDayStrings.transactionId })
+      .from(rangeDayStrings)
+      .innerJoin(ammoTransactions, eq(rangeDayStrings.transactionId, ammoTransactions.id))
+      .where(and(eq(rangeDayStrings.id, id), eq(ammoTransactions.userId, userId)))
+    if (!str) return
+    await db.transaction(async (tx) => {
+      await tx.delete(ammoLedgerEntries).where(eq(ammoLedgerEntries.transactionId, str.transactionId))
+      await tx.delete(ammoTransactions).where(eq(ammoTransactions.id, str.transactionId))
+      await tx.delete(rangeDayStrings).where(eq(rangeDayStrings.id, id))
+    })
   },
 }

@@ -46,8 +46,50 @@ export const ammoLedgerEntries = pgTable('ammo_ledger_entries', {
   id: serial('id').primaryKey(),
   transactionId: integer('transaction_id').notNull().references(() => ammoTransactions.id),
   ammoTypeId: integer('ammo_type_id').notNull().references(() => ammoTypes.id),
+  weaponId: integer('weapon_id').references(() => weapons.id),
   quantity: integer('quantity').notNull(),
-  location: text('location').notNull(), // storage | bag | equity
+  location: text('location').notNull(), // storage | bag | equity | gun
   isBalancing: boolean('is_balancing').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
+export const rangeDayWeapons = pgTable('range_day_weapons', {
+  id: serial('id').primaryKey(),
+  sessionId: integer('session_id').notNull().references(() => rangeDaySessions.id),
+  weaponId: integer('weapon_id').notNull().references(() => weapons.id),
+})
+
+export const rangeDayStrings = pgTable('range_day_strings', {
+  id: serial('id').primaryKey(),
+  sessionId: integer('session_id').notNull().references(() => rangeDaySessions.id),
+  transactionId: integer('transaction_id').notNull().references(() => ammoTransactions.id),
+  weaponId: integer('weapon_id').notNull().references(() => weapons.id),
+  ammoTypeId: integer('ammo_type_id').notNull().references(() => ammoTypes.id),
+  rounds: integer('rounds').notNull(),
+  occurredAt: timestamp('occurred_at').defaultNow().notNull(),
+  note: text('note'),
+})
+
+export const weapons = pgTable('weapons', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  name: text('name').notNull(),
+  caliber: text('caliber').notNull(),
+  type: text('type').notNull(), // handgun | rifle | shotgun
+  serialNumber: text('serial_number'),
+  notes: text('notes'),
+  cleaningIntervalRounds: integer('cleaning_interval_rounds'),
+  cleaningIntervalDays: integer('cleaning_interval_days'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
+export const weaponCleanings = pgTable('weapon_cleanings', {
+  id: serial('id').primaryKey(),
+  weaponId: integer('weapon_id').notNull().references(() => weapons.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id),
+  cleanedAt: timestamp('cleaned_at').notNull(),
+  roundCountAtCleaning: integer('round_count_at_cleaning').notNull(),
+  note: text('note'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })

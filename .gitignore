@@ -33,3 +33,6 @@ dist-ssr
 
 # Drizzle
 packages/db/drizzle
+
+# TypeScript build info
+*.tsbuildinfo

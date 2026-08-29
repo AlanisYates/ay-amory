@@ -8,6 +8,7 @@ export default defineConfig({
     proxy: {
       '/auth': 'http://localhost:3000',
       '/ammo': 'http://localhost:3000',
+      '/weapons': 'http://localhost:3000',
     },
   },
 })

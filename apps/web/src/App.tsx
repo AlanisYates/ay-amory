@@ -28,8 +28,28 @@ type Transaction = {
 
 type BagItem = { ammoTypeId: number; taken: number; acquired: number; inBag: number }
 
+type RangeDayString = {
+  id: number; sessionId: number; transactionId: number
+  weaponId: number; ammoTypeId: number; rounds: number
+  occurredAt: string; note: string | null
+}
+
+type GunLoaded = { weaponId: number; ammoTypeId: number; rounds: number }
+
 type RangeDaySession = {
-  id: number; note: string | null; startedAt: string; endedAt: string | null; bag?: BagItem[]
+  id: number; note: string | null; startedAt: string; endedAt: string | null
+  bag?: BagItem[]; weapons?: Weapon[]; strings?: RangeDayString[]; gunLoaded?: GunLoaded[]
+}
+
+type Weapon = {
+  id: number; userId: number; name: string; caliber: string
+  type: string; serialNumber: string | null; notes: string | null
+  cleaningIntervalRounds: number | null; cleaningIntervalDays: number | null
+  createdAt: string; updatedAt: string
+}
+type WeaponCleaning = {
+  id: number; weaponId: number; userId: number
+  cleanedAt: string; roundCountAtCleaning: number; note: string | null; createdAt: string
 }
 
 // ── API helper ────────────────────────────────────────────────────────────
@@ -275,45 +295,9 @@ function QuickForm({ title, onClose, children }: { title: string; onClose: () =>
   )
 }
 
-function AcquireForm({ ammoTypes, onSuccess, onClose }: {
-  ammoTypes: AmmoType[]; onSuccess: () => void; onClose: () => void
-}) {
-  const [ammoTypeId, setAmmoTypeId] = useState(ammoTypes[0]?.id ?? 0)
-  const [quantity, setQuantity] = useState('')
-  const [note, setNote] = useState('')
-  const [error, setError] = useState('')
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    const res = await apiFetch('/ammo/transactions', {
-      method: 'POST',
-      body: JSON.stringify({
-        type: 'acquisition',
-        occurredAt: new Date().toISOString(),
-        note: note || null,
-        entries: [{ ammoTypeId: Number(ammoTypeId), quantity: Math.abs(Number(quantity)) }],
-      }),
-    })
-    if (!res.ok) { const d = await res.json(); setError(d.error || 'Error'); return }
-    onSuccess()
-  }
-
-  return (
-    <form onSubmit={submit} className="flex flex-col gap-3">
-      <select value={ammoTypeId} onChange={e => setAmmoTypeId(Number(e.target.value))}
-        className="px-3 py-2 border rounded-lg text-sm">
-        {ammoTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-      </select>
-      <input type="number" min="1" placeholder="Quantity" value={quantity} required
-        onChange={e => setQuantity(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
-      <input type="text" placeholder="Note (e.g. Bought at LGS)" value={note}
-        onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
-      {error && <p className="text-red-500 text-sm">{error}</p>}
-      <button type="submit" className="px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">Add</button>
-    </form>
-  )
-}
+type AddAmmoRow =
+  | { kind: 'existing'; ammoTypeId: number; quantity: number; price: string }
+  | { kind: 'new'; name: string; caliber: string; brand: string; grain: string; quantity: number; price: string }
 
 function ExpendForm({ ammoTypes, onSuccess, onClose }: {
   ammoTypes: AmmoType[]; onSuccess: () => void; onClose: () => void
@@ -441,59 +425,244 @@ function NewTypeForm({ onSuccess, onClose }: { onSuccess: () => void; onClose: (
 
 type AmmoRow = { ammoTypeId: number; quantity: number }
 
-function RangeDayStartForm({ ammoTypes, onSuccess, onClose }: {
-  ammoTypes: AmmoType[]; onSuccess: (session: RangeDaySession) => void; onClose: () => void
+function RangeDayStartWizard({ onComplete, onCancel }: {
+  onComplete: (session: RangeDaySession) => void
+  onCancel: () => void
 }) {
+  const [step, setStep] = useState<1 | 2>(1)
   const [note, setNote] = useState('')
-  const [rows, setRows] = useState<AmmoRow[]>([{ ammoTypeId: ammoTypes[0]?.id ?? 0, quantity: 0 }])
+  const [selectedWeapons, setSelectedWeapons] = useState<number[]>([])
+  const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
+  const [weapons, setWeapons] = useState<Weapon[]>([])
+  const [inventory, setInventory] = useState<InventoryItem[]>([])
+  const [rows, setRows] = useState<AmmoRow[]>([])
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
 
-  const updateRow = (i: number, field: keyof AmmoRow, val: number) => {
-    setRows(r => r.map((row, idx) => idx === i ? { ...row, [field]: val } : row))
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      apiFetch('/ammo/types'),
+      apiFetch('/weapons'),
+      apiFetch('/ammo/inventory'),
+    ]).then(async ([t, w, i]) => {
+      if (cancelled) return
+      const types: AmmoType[] = t.ok ? await t.json() : []
+      const wps: Weapon[] = w.ok ? await w.json() : []
+      const inv: InventoryItem[] = i.ok ? await i.json() : []
+      setAmmoTypes(types); setWeapons(wps); setInventory(inv)
+      const stocked = types.filter(x => (inv.find(y => y.id === x.id)?.balance ?? 0) > 0)
+      setRows([])
+      setLoading(false)
+    }).catch(() => setLoading(false))
+    return () => { cancelled = true }
+  }, [])
+
+  const balanceByType = new Map(inventory.map(i => [i.id, i.balance]))
+  const availableFor = (ammoTypeId: number) => balanceByType.get(ammoTypeId) ?? 0
+  const stockedTypes = ammoTypes.filter(t => availableFor(t.id) > 0)
+  // Only offer ammo whose caliber matches a weapon the user put in their range bag
+  // (Step 1). If no weapons were picked, fall back to showing all stocked ammo.
+  const bagCalibers = new Set(
+    weapons.filter(w => selectedWeapons.includes(w.id)).map(w => w.caliber)
+  )
+  const ammoStepTypes = bagCalibers.size > 0
+    ? stockedTypes.filter(t => bagCalibers.has(t.caliber))
+    : stockedTypes
+
+  const toggleWeapon = (id: number) => {
+    setSelectedWeapons(prev => prev.includes(id) ? prev.filter(w => w !== id) : [...prev, id])
+  }
+  // ── Ammo "cart" helpers ──────────────────────────────────────────────
+  const toggleAmmo = (id: number) => {
+    setRows(prev => prev.some(r => r.ammoTypeId === id)
+      ? prev.filter(r => r.ammoTypeId !== id)
+      : [...prev, { ammoTypeId: id, quantity: 0 }])
+  }
+  const stepAmmo = (id: number, delta: number) => {
+    setRows(prev => prev.flatMap(r => {
+      if (r.ammoTypeId !== id) return [r]
+      const next = Math.max(0, Math.min(availableFor(id), r.quantity + delta))
+      return next === 0 ? [] : [{ ...r, quantity: next }]
+    }))
+  }
+  const setAmmoQty = (id: number, val: number) => {
+    if (!Number.isFinite(val) || val <= 0) { setRows(prev => prev.filter(r => r.ammoTypeId !== id)); return }
+    const clamped = Math.min(availableFor(id), Math.floor(val))
+    setRows(prev => prev.some(r => r.ammoTypeId === id)
+      ? prev.map(r => r.ammoTypeId === id ? { ...r, quantity: clamped } : r)
+      : [...prev, { ammoTypeId: id, quantity: clamped }])
   }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (step === 1) { setStep(2); return }
     setError('')
     const ammo = rows.filter(r => r.quantity > 0)
     if (ammo.length === 0) { setError('Add at least one ammo type with quantity > 0'); return }
+    const overLimit = ammo.some(r => r.quantity > availableFor(r.ammoTypeId))
+    if (overLimit) { setError('One or more calibers exceed what you have in storage'); return }
+    setSubmitting(true)
     const res = await apiFetch('/ammo/range-days', {
       method: 'POST',
-      body: JSON.stringify({ note: note || null, ammo }),
+      body: JSON.stringify({ note: note || null, ammo, weapons: selectedWeapons }),
     })
+    setSubmitting(false)
     if (!res.ok) { const d = await res.json(); setError(d.error || 'Error'); return }
     const session = await res.json()
-    onSuccess(session)
+    onComplete(session)
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-3">
-      <input type="text" placeholder="Note (e.g. Burro Canyon)" value={note}
-        onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
-      {rows.map((row, i) => (
-        <div key={i} className="flex gap-2 items-center">
-          <select value={row.ammoTypeId} onChange={e => updateRow(i, 'ammoTypeId', Number(e.target.value))}
-            className="flex-1 px-3 py-2 border rounded-lg text-sm">
-            {ammoTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-          <input type="number" min="1" placeholder="Qty" value={row.quantity || ''}
-            onChange={e => updateRow(i, 'quantity', Number(e.target.value))}
-            className="w-24 px-3 py-2 border rounded-lg text-sm" />
-          {rows.length > 1 && (
-            <button type="button" onClick={() => setRows(r => r.filter((_, idx) => idx !== i))}
-              className="text-neutral-400 hover:text-red-500 cursor-pointer text-lg leading-none">&times;</button>
-          )}
+    <div className="min-h-screen bg-neutral-50">
+      <header className="border-b border-neutral-200 bg-white sticky top-0 z-10">
+        <div className="mx-auto max-w-3xl flex items-center justify-between px-6 h-16">
+          <button onClick={onCancel} className="text-neutral-400 hover:text-neutral-700 cursor-pointer">← Cancel</button>
+          <h1 className="text-lg font-bold tracking-tight">Start Range Day</h1>
+          <div className="w-16" />
         </div>
-      ))}
-      <button type="button" onClick={() => setRows(r => [...r, { ammoTypeId: ammoTypes[0]?.id ?? 0, quantity: 0 }])}
-        className="text-sm text-neutral-500 hover:text-neutral-700 cursor-pointer text-left">
-        + Add Another Caliber
-      </button>
-      {error && <p className="text-red-500 text-sm">{error}</p>}
-      <button type="submit" className="px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">
-        Start Range Day
-      </button>
-    </form>
+      </header>
+
+      <main className="mx-auto max-w-3xl px-6 py-8">
+        {/* Step heading */}
+        <h2 className="text-xl font-semibold text-center text-neutral-900 mb-6">
+          {step === 1 ? 'Choose your weapons' : 'Choose your ammo'}
+        </h2>
+
+        {loading ? (
+          <p className="text-neutral-500 text-sm">Loading…</p>
+        ) : (
+          <form onSubmit={submit} className="flex flex-col gap-6">
+            {step === 1 && (
+              <div>
+                <p className="text-sm text-neutral-500 mb-3">Tap the weapons you're bringing. You can add more later on the Weapons tab.</p>
+                {weapons.length === 0 ? (
+                  <p className="text-sm text-neutral-400">No weapons yet — you can skip this and add them later.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {weapons.map(w => {
+                      const selected = selectedWeapons.includes(w.id)
+                      return (
+                        <button type="button" key={w.id} onClick={() => toggleWeapon(w.id)}
+                          className={`text-left rounded-xl border p-4 flex flex-col gap-3 transition-colors cursor-pointer ${
+                            selected ? 'border-black bg-neutral-50 ring-1 ring-black' : 'border-neutral-200 bg-white hover:border-neutral-400'
+                          }`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-semibold text-neutral-900">{w.name}</p>
+                              <p className="text-xs text-neutral-400 capitalize mt-0.5">{w.type} · {w.caliber}</p>
+                            </div>
+                            <span className="shrink-0 text-xs bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full">{w.caliber}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className={`w-4 h-4 rounded-full border flex items-center justify-center text-[10px] ${selected ? 'bg-black text-white border-black' : 'border-neutral-300 text-transparent'}`}>✓</span>
+                            <span className={selected ? 'text-neutral-900 font-medium' : 'text-neutral-400'}>
+                              {selected ? 'In your range bag' : 'Add to range bag'}
+                            </span>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                <button type="button" onClick={() => setStep(2)}
+                  className="mt-6 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">
+                  Continue to Ammo →
+                </button>
+              </div>
+            )}
+
+            {step === 2 && (
+              <div className="flex flex-col gap-4">
+                {/* Keep the selected-weapon context visible on the ammo step */}
+                <div className="rounded-xl border border-neutral-200 bg-white p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-neutral-700">Your range bag</p>
+                    <button type="button" onClick={() => setStep(1)}
+                      className="text-xs text-neutral-400 hover:text-neutral-700 cursor-pointer">Edit</button>
+                  </div>
+                  {selectedWeapons.length === 0 ? (
+                    <p className="text-sm text-neutral-400">No weapons selected — you can add them later on the Weapons tab.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {weapons.filter(w => selectedWeapons.includes(w.id)).map(w => (
+                        <span key={w.id} className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-100 rounded-lg text-sm">
+                          <span className="font-medium text-neutral-800">{w.name}</span>
+                          <span className="text-xs text-neutral-400">{w.caliber}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <input type="text" placeholder="Note (e.g. Burro Canyon)" value={note}
+                  onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
+
+                <div>
+                  <p className="text-sm font-medium text-neutral-700 mb-2">Ammo to take</p>
+                  {ammoStepTypes.length === 0 ? (
+                    <p className="text-xs text-neutral-400 mt-2">
+                      {bagCalibers.size > 0
+                        ? 'No ammo in storage matches the calibers of the weapons in your range bag.'
+                        : 'No rounds in storage — add inventory on the Ammo tab first.'}
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {ammoStepTypes.map(t => {
+                        const row = rows.find(r => r.ammoTypeId === t.id)
+                        const inCart = !!row
+                        const qty = row?.quantity ?? 0
+                        const avail = availableFor(t.id)
+                        const over = qty > avail
+                        return (
+                          <div key={t.id}
+                            onClick={() => { if (!inCart) toggleAmmo(t.id) }}
+                            className={`rounded-xl border p-4 flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                              inCart ? 'border-black bg-neutral-50' : 'border-neutral-200 bg-white hover:border-neutral-400'
+                            }`}>
+                            <div>
+                              <p className="font-semibold text-neutral-900">{t.name}</p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${over ? 'bg-red-100 text-red-700' : 'bg-neutral-100 text-neutral-500'}`}>{t.caliber}</span>
+                                <span className={`text-xs ${over ? 'text-red-500' : 'text-neutral-400'}`}>{avail.toLocaleString()} in storage</span>
+                              </div>
+                            </div>
+                            {inCart ? (
+                              <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+                                <QuickAdd rounds={qty} cap={avail}
+                                  onChange={(n) => setAmmoQty(t.id, n)}
+                                  onStep={(d) => stepAmmo(t.id, d)}
+                                  steps={[50, 100]} step={1} inline />
+                                <button type="button" onClick={() => toggleAmmo(t.id)} title="Remove"
+                                  className="w-9 h-9 rounded-lg border border-neutral-200 text-neutral-400 hover:text-red-500 hover:border-red-200 cursor-pointer">×</button>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-neutral-400">Add</span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {error && <p className="text-red-500 text-sm">{error}</p>}
+
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setStep(1)}
+                    className="px-4 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">← Back</button>
+                  <button type="submit" disabled={submitting}
+                    className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer disabled:opacity-40">
+                    Start Range Day
+                  </button>
+                </div>
+              </div>
+            )}
+          </form>
+        )}
+      </main>
+    </div>
   )
 }
 
@@ -674,86 +843,528 @@ function TransactionHistory({ ammoTypes }: { ammoTypes: AmmoType[] }) {
   )
 }
 
-// ── Range Day View ────────────────────────────────────────────────────────
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ${mins % 60}m ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
 
-function EndSessionModal({ session, bagContents, ammoTypes, onConfirm, onCancel }: {
-  session: RangeDaySession
-  bagContents: BagItem[]
+function ConfirmEndModal({ bag, strings, weapons, ammoTypes, onConfirm, onCancel }: {
+  bag: BagItem[]
+  strings: RangeDayString[]
+  weapons: Weapon[]
   ammoTypes: AmmoType[]
-  onConfirm: (returnAmmo: AmmoRow[]) => void
+  onConfirm: () => void
   onCancel: () => void
 }) {
-  const [returnAmounts, setReturnAmounts] = useState<Record<number, number>>(() => {
-    const init: Record<number, number> = {}
-    for (const b of bagContents) init[b.ammoTypeId] = b.inBag
-    return init
-  })
-  const [error, setError] = useState('')
+  const leftover = bag.reduce((s, b) => s + b.inBag, 0)
+  const totalAcquired = bag.reduce((s, b) => s + b.acquired, 0)
 
-  const typeForId = (id: number) => ammoTypes.find(t => t.id === id)
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-      for (const b of bagContents) {
-        const ret = returnAmounts[b.ammoTypeId] ?? 0
-        const t = typeForId(b.ammoTypeId)
-        if (ret > b.inBag) { setError(`Cannot return more than ${b.inBag} of ${t?.name ?? `Type #${b.ammoTypeId}`}`); return }
-      }
-    const returnAmmo = bagContents
-      .map(b => ({ ammoTypeId: b.ammoTypeId, quantity: returnAmounts[b.ammoTypeId] ?? 0 }))
-      .filter(r => r.quantity > 0)
-    onConfirm(returnAmmo)
+  const firedByWeapon = new Map<number, Map<number, number>>()
+  let totalFired = 0
+  for (const s of strings) {
+    totalFired += s.rounds
+    if (!firedByWeapon.has(s.weaponId)) firedByWeapon.set(s.weaponId, new Map())
+    const m = firedByWeapon.get(s.weaponId)!
+    m.set(s.ammoTypeId, (m.get(s.ammoTypeId) ?? 0) + s.rounds)
   }
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
         <h3 className="text-lg font-semibold mb-1">End Range Day</h3>
-        {session.note && <p className="text-sm text-neutral-500 mb-4">{session.note}</p>}
-        <p className="text-sm font-medium text-neutral-700 mb-3">What are you returning to storage?</p>
-        <form onSubmit={submit} className="flex flex-col gap-3">
-          {bagContents.map(b => {
-            const ret = returnAmounts[b.ammoTypeId] ?? 0
-            const expended = b.inBag - ret
+        <p className="text-sm text-neutral-600 mb-3">
+          Any ammo left in the bag (<span className="font-semibold">{leftover}</span> rounds) will be returned to storage.
+          Rounds already fired are recorded as expended.
+        </p>
+
+        <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
+          <div className="px-3 py-2 flex justify-between text-sm">
+            <span className="font-medium text-neutral-700">Fired this session</span>
+            <span className="font-semibold">{totalFired}</span>
+          </div>
+          {[...firedByWeapon.entries()].map(([weaponId, byType]) => {
+            const w = weapons.find(x => x.id === weaponId)
+            const weaponTotal = [...byType.values()].reduce((a, b) => a + b, 0)
             return (
-              <div key={b.ammoTypeId} className="rounded-lg bg-neutral-50 p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  {(() => {
-                    const t = typeForId(b.ammoTypeId)
-                    return (
-                      <>
-                        <span className="text-sm font-medium">{t?.name ?? `Type #${b.ammoTypeId}`}</span>
-                        {t?.caliber && (
-                          <span className="text-xs bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full">{t.caliber}</span>
-                        )}
-                      </>
-                    )
-                  })()}
-                  <input type="number" min="0" max={b.inBag} value={ret}
-                    onChange={e => setReturnAmounts(prev => ({ ...prev, [b.ammoTypeId]: Number(e.target.value) }))}
-                    className="ml-auto w-20 px-2 py-1 border rounded text-sm text-right" />
-                  <span className="text-sm text-neutral-500">rounds</span>
+              <div key={weaponId} className="px-3 py-2">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">{w?.name ?? `Weapon #${weaponId}`}</span>
+                  <span className="text-neutral-500">{weaponTotal}</span>
                 </div>
-                <div className="text-xs text-neutral-500 space-y-0.5 border-t border-neutral-200 pt-2 mt-1">
-                  <div className="flex justify-between"><span>Taken:</span><span>{b.taken}</span></div>
-                  <div className="flex justify-between"><span>Acquired:</span><span>{b.acquired}</span></div>
-                  <div className="flex justify-between"><span>Returned:</span><span>{ret}</span></div>
-                  <div className="flex justify-between font-medium text-neutral-700 border-t border-neutral-200 pt-0.5 mt-0.5">
-                    <span>Expended (derived):</span><span>{expended}</span>
-                  </div>
+                <div className="mt-1 space-y-0.5">
+                  {[...byType.entries()].map(([ammoTypeId, rounds]) => {
+                    const t = ammoTypes.find(a => a.id === ammoTypeId)
+                    return (
+                      <div key={ammoTypeId} className="flex justify-between text-xs text-neutral-500 pl-3">
+                        <span>{t?.name ?? `Type #${ammoTypeId}`}</span>
+                        <span>{rounds}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )
           })}
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-          <div className="flex gap-3 mt-2">
-            <button type="button" onClick={onCancel}
-              className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Cancel</button>
-            <button type="submit"
-              className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer">Confirm</button>
+
+          <div className="px-3 py-2 flex justify-between text-sm">
+            <span className="font-medium text-neutral-700">Bought this session</span>
+            <span className="font-semibold">{totalAcquired}</span>
           </div>
-        </form>
+          {bag.filter(b => b.acquired > 0).map(b => {
+            const t = ammoTypes.find(a => a.id === b.ammoTypeId)
+            return (
+              <div key={b.ammoTypeId} className="px-3 py-1.5 flex justify-between text-xs text-neutral-500">
+                <span>{t?.name ?? `Type #${b.ammoTypeId}`}</span>
+                <span>{b.acquired}</span>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="flex gap-3 mt-4">
+          <button type="button" onClick={onCancel}
+            className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Cancel</button>
+          <button type="button" onClick={onConfirm}
+            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer">End Range Day</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction, typeForId }: {
+  weapon: Weapon
+  bag: BagItem[]
+  ammoTypes: AmmoType[]
+  gunLoaded: GunLoaded[]
+  strings: RangeDayString[]
+  onAction: (action: 'load' | 'shoot' | 'return', weaponId: number, ammoTypeId: number, rounds: number, note: string) => Promise<string | null>
+  typeForId: (id: number) => AmmoType | undefined
+}) {
+  const [ammoTypeId, setAmmoTypeId] = useState<number>(bag[0]?.ammoTypeId ?? 0)
+  const [rounds, setRounds] = useState(0)
+  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+  const [stage, setStage] = useState<'load' | 'shoot'>(
+    gunLoaded.some(g => g.weaponId === weapon.id && g.rounds > 0) ? 'shoot' : 'load'
+  )
+  const [showEndDialog, setShowEndDialog] = useState(false)
+
+  // Keep a sensible default selection as the bag / gun changes for the current stage
+  useEffect(() => {
+    if (stage === 'load') {
+      if (!bag.some(b => b.ammoTypeId === ammoTypeId)) {
+        const matches = bag.filter(b => {
+          const t = typeForId(b.ammoTypeId)
+          return !!t && t.caliber === weapon.caliber && b.inBag > 0
+        })
+        setAmmoTypeId(matches.length > 0 ? matches[0].ammoTypeId : 0)
+      }
+    } else if (stage === 'shoot') {
+      if (loaded.length && !loaded.some(g => g.ammoTypeId === ammoTypeId)) setAmmoTypeId(loaded[0].ammoTypeId)
+    }
+  }, [bag, gunLoaded, ammoTypeId, stage])
+
+  const loaded = gunLoaded.filter(g => g.weaponId === weapon.id)
+
+  // In the Load stage, only ever offer caliber-matching, in-stock ammo — never
+  // mismatched calibers, even when nothing matches.
+  const availableMatch = bag.filter(b => {
+    const t = typeForId(b.ammoTypeId)
+    return !!t && t.caliber === weapon.caliber && b.inBag > 0
+  })
+
+  // In the Shoot stage the active type must stay stable even after its loaded count
+  // hits zero, otherwise the Fired stat (keyed to the active type) would reset. Use
+  // the full loaded set, not just the non-empty entries.
+  const selectOptions = stage === 'shoot' ? loaded : availableMatch
+  const selectedValid = selectOptions.some(o => o.ammoTypeId === ammoTypeId)
+  const activeTypeId = selectedValid ? ammoTypeId : (selectOptions[0]?.ammoTypeId ?? 0)
+
+  // Auto-pick when there's a single unambiguous match; otherwise the user chooses
+  // among the matching types in the dropdown.
+  const autoMatch = availableMatch.length === 1 ? availableMatch[0] : null
+  const loadTypeId = autoMatch ? autoMatch.ammoTypeId : activeTypeId
+
+  const inBag = bag.find(b => b.ammoTypeId === loadTypeId)?.inBag ?? 0
+  const loadedForAmmo = loaded.find(g => g.ammoTypeId === activeTypeId)?.rounds ?? 0
+  const firedForAmmo = strings
+    .filter(s => s.weaponId === weapon.id && s.ammoTypeId === activeTypeId)
+    .reduce((s, x) => s + x.rounds, 0)
+  // Stepper cap = what you can act on for the active ammo in the current stage
+  const cap = stage === 'shoot' ? loadedForAmmo : inBag
+
+  const setRoundsClamped = (n: number) => {
+    if (!Number.isFinite(n) || n < 0) setRounds(0)
+    else setRounds(Math.min(cap, Math.floor(n)))
+  }
+  const step = (d: number) => setRoundsClamped(rounds + d)
+
+  const act = async (action: 'load' | 'shoot' | 'return', useAll = false) => {
+    setError('')
+    const id = stage === 'load' ? loadTypeId : activeTypeId
+    const amount = useAll ? (action === 'load' ? inBag : loadedForAmmo) : rounds
+    if (!id) { setError('Select an ammo type'); return }
+    if (action === 'load') {
+      if (inBag === 0) { setError('No ammo of this type in the bag'); return }
+      if (amount <= 0) { setError('Enter a positive round count'); return }
+      if (amount > inBag) { setError(`Only ${inBag} in the bag`); return }
+    } else {
+      if (loadedForAmmo === 0) { setError('Nothing loaded for this ammo'); return }
+      if (amount <= 0) { setError('Enter a positive round count'); return }
+      if (amount > loadedForAmmo) { setError(`Only ${loadedForAmmo} loaded`); return }
+    }
+    const err = await onAction(action, weapon.id, id, amount, note)
+    if (err) { setError(err); return }
+    setRounds(0)
+    setNote('')
+    if (action === 'load') setStage('shoot')
+  }
+
+  const endRound = () => {
+    const remaining = loaded.filter(g => g.rounds > 0)
+    if (remaining.length === 0) { setStage('load'); return }
+    setShowEndDialog(true)
+  }
+
+  const confirmEndRound = async () => {
+    setShowEndDialog(false)
+    setError('')
+    for (const g of loaded) {
+      if (g.rounds <= 0) continue
+      const err = await onAction('return', weapon.id, g.ammoTypeId, g.rounds, note)
+      if (err) { setError(err); return }
+    }
+    setNote('')
+    setRounds(0)
+    setStage('load')
+  }
+
+  const remainingEntries = loaded.filter(g => g.rounds > 0)
+  const remainingTotal = remainingEntries.reduce((s, g) => s + g.rounds, 0)
+  const firedTotal = strings.filter(s => s.weaponId === weapon.id).reduce((s, x) => s + x.rounds, 0)
+
+  const inventoryItems = (stage === 'load'
+    ? availableMatch.map(b => ({ ammoTypeId: b.ammoTypeId, rounds: b.inBag }))
+    : loaded.map(g => ({ ammoTypeId: g.ammoTypeId, rounds: g.rounds }))
+  ).filter(x => x.rounds > 0)
+  const inventoryTotal = inventoryItems.reduce((s, x) => s + x.rounds, 0)
+  const selectedTypeId = stage === 'load' ? loadTypeId : activeTypeId
+
+  return (
+    <>
+    <div className="rounded-xl border border-neutral-200 bg-white p-4 flex flex-col">
+      {/* Card face: the firearm, trading-card style */}
+      <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-5 text-center">
+        <span className="text-xl font-bold text-neutral-900">{weapon.name}</span>
+        <div className="mt-2 flex justify-center">
+          <span className="text-xs bg-white border border-neutral-200 text-neutral-500 px-2 py-0.5 rounded-full">{weapon.caliber}</span>
+        </div>
+      </div>
+
+      {/* Hero stats: loaded / fired as side-by-side tiles */}
+      <div className="mt-3 flex gap-2">
+        <div className="border border-neutral-200 rounded-lg px-3 py-2 flex-1 text-center">
+          <p className="text-xs text-neutral-400 uppercase tracking-wide">Loaded</p>
+          <p className="text-5xl font-bold text-blue-600">{loadedForAmmo.toLocaleString()}</p>
+        </div>
+        <div className="border border-neutral-200 rounded-lg px-3 py-2 flex-1 text-center">
+          <p className="text-xs text-neutral-400 uppercase tracking-wide">Fired</p>
+          <p className="text-5xl font-bold text-red-600">{firedForAmmo.toLocaleString()}</p>
+        </div>
+      </div>
+
+      {/* Mini-cart: tap an ammo type to select it */}
+      <div className="mt-3">
+        {inventoryItems.length > 0 ? (
+          <div className="mt-1 flex flex-wrap gap-2">
+            {inventoryItems.map(it => {
+              const t = typeForId(it.ammoTypeId)
+              const sel = it.ammoTypeId === selectedTypeId
+              return (
+                <button type="button" key={it.ammoTypeId}
+                  onClick={() => { setAmmoTypeId(it.ammoTypeId); setRounds(0) }}
+                  className={`px-3 py-1.5 rounded-full border text-sm cursor-pointer ${sel ? 'bg-black text-white border-black' : 'bg-neutral-100 text-neutral-700 border-neutral-200 hover:bg-neutral-50'}`}>
+                  {t?.name ?? `Type #${it.ammoTypeId}`} · {it.rounds}
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-500 mt-1">{stage === 'load' ? 'No matching ammo in the bag.' : 'Nothing loaded.'}</p>
+        )}
+        <p className="text-xs text-neutral-500 mt-2">{stage === 'load' ? 'Bag' : 'Loaded'} total: {inventoryTotal.toLocaleString()}</p>
+      </div>
+
+      {/* Centered counter */}
+      <div className="flex items-center justify-center gap-4 mt-4">
+        <button type="button" onClick={() => step(-1)} disabled={rounds <= 0}
+          className="w-10 h-10 flex items-center justify-center border rounded-lg text-lg hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">−</button>
+        <input type="number" min="0" value={rounds} inputMode="numeric" onChange={e => setRoundsClamped(Number(e.target.value))}
+          className="w-20 text-center text-3xl font-bold text-neutral-900 border-0 focus:outline-none" />
+        <button type="button" onClick={() => step(1)} disabled={rounds >= cap}
+          className="w-10 h-10 flex items-center justify-center border rounded-lg text-lg hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+      </div>
+
+      {/* Bulk preset chips */}
+      <div className="flex flex-wrap justify-center gap-2 mt-3">
+        {[5, 10, 50].map(n => (
+          <button type="button" key={n} onClick={() => setRoundsClamped(rounds + n)} disabled={rounds + n > cap}
+            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+{n}</button>
+        ))}
+        {cap > 0 && (
+          <button type="button" onClick={() => setRoundsClamped(cap)}
+            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">All</button>
+        )}
+      </div>
+
+      <input type="text" placeholder="Note (optional)" value={note}
+        onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm w-full mt-4" />
+
+      {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
+
+      {stage === 'load' ? (
+        <button type="button" onClick={() => act('load')}
+          disabled={rounds === 0 || inBag === 0}
+          className="w-full mt-3 px-3 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Load</button>
+      ) : (
+        <div className="flex gap-2 mt-3">
+          <button type="button" onClick={() => act('shoot')}
+            disabled={rounds === 0 || loadedForAmmo === 0}
+            className="flex-1 px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Shoot</button>
+          <button type="button" onClick={endRound}
+            className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">End Round</button>
+        </div>
+      )}
+    </div>
+
+    {showEndDialog && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="bg-white rounded-xl border border-neutral-200 p-5 max-w-sm w-full">
+          <h3 className="text-base font-semibold text-neutral-900">End round?</h3>
+          <p className="text-sm text-neutral-600 mt-2">
+            You have <span className="font-semibold">{remainingTotal}</span> round(s) still in {weapon.name}.
+            Return them to your bag?
+          </p>
+          {remainingEntries.length > 0 && (
+            <ul className="mt-3 space-y-1">
+              {remainingEntries.map(g => {
+                const t = typeForId(g.ammoTypeId)
+                return (
+                  <li key={g.ammoTypeId} className="text-sm text-neutral-600 flex justify-between">
+                    <span>{t?.name ?? `Type #${g.ammoTypeId}`}</span>
+                    <span className="font-medium">{g.rounds}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {firedTotal > 0 && (
+            <p className="text-xs text-neutral-400 mt-3">You've fired {firedTotal} round(s) so far this session.</p>
+          )}
+          <div className="flex gap-2 mt-4">
+            <button type="button" onClick={() => setShowEndDialog(false)}
+              className="flex-1 px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Cancel</button>
+            <button type="button" onClick={confirmEndRound}
+              className="flex-1 px-3 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">Return to bag</button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
+  )
+}
+
+function QuickAdd({ rounds, cap, onChange, onStep, onMax, steps = [5, 10, 30], step = 1, inline = false }: {
+  rounds: number
+  cap: number
+  onChange: (n: number) => void
+  onStep: (d: number) => void
+  onMax?: () => void
+  steps?: number[]
+  step?: number
+  inline?: boolean
+}) {
+  const chip = "px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+  if (inline) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {steps.map(n => (
+          <button type="button" key={n} onClick={() => onChange(rounds + n)} disabled={rounds + n > cap} className={chip}>+{n}</button>
+        ))}
+        <button type="button" onClick={() => onStep(-step)} disabled={rounds <= 0} className={chip}>−</button>
+        <input type="number" min="0" value={rounds} inputMode="numeric"
+          onChange={e => onChange(Number(e.target.value))}
+          className="w-16 px-2 py-1.5 border rounded-lg text-sm text-center" />
+        <button type="button" onClick={() => onStep(step)} disabled={rounds >= cap} className={chip}>+</button>
+        {onMax && (
+          <button type="button" onClick={onMax} disabled={cap === 0} className={chip}>All</button>
+        )}
+      </div>
+    )
+  }
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2">
+        {steps.map(n => (
+          <button type="button" key={n} onClick={() => onChange(rounds + n)} disabled={rounds + n > cap}
+            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+{n}</button>
+        ))}
+        {onMax && (
+          <button type="button" onClick={onMax} disabled={cap === 0}
+            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">All</button>
+        )}
+      </div>
+      <div className="flex items-center gap-1 mt-2">
+        <button type="button" onClick={() => onStep(-step)} disabled={rounds <= 0}
+          className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">−</button>
+        <input type="number" min="0" value={rounds} inputMode="numeric"
+          onChange={e => onChange(Number(e.target.value))}
+          className="w-16 px-2 py-1.5 border rounded-lg text-sm text-center" />
+        <button type="button" onClick={() => onStep(step)} disabled={rounds >= cap}
+          className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+      </div>
+      {rounds === 0 && <p className="text-xs text-neutral-400 mt-1">No rounds selected</p>}
+    </div>
+  )
+}
+
+function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
+  ammoTypes: AmmoType[]
+  caption: string
+  onSubmit: (rows: AddAmmoRow[], note: string) => void
+  onClose: () => void
+}) {
+  const [qty, setQty] = useState<Record<number, string>>({})
+  const [price, setPrice] = useState<Record<number, string>>({})
+  const [note, setNote] = useState('')
+  const [showNew, setShowNew] = useState(false)
+  const [newTypes, setNewTypes] = useState<Extract<AddAmmoRow, { kind: 'new' }>[]>([])
+  const [draft, setDraft] = useState({ name: '', caliber: '', brand: '', grain: '', quantity: '', price: '' })
+
+  const existingRows: AddAmmoRow[] = ammoTypes
+    .map(t => ({ kind: 'existing' as const, ammoTypeId: t.id, quantity: Number(qty[t.id] || 0), price: price[t.id] ?? '' }))
+    .filter(r => r.quantity > 0)
+
+  const submit = () => {
+    const rows = [...existingRows, ...newTypes.filter(r => r.quantity > 0)]
+    if (rows.length === 0) return
+    onSubmit(rows, note)
+  }
+
+  const addNewType = () => {
+    const quantity = Number(draft.quantity) || 0
+    if (!draft.name || !draft.caliber || quantity <= 0) return
+    setNewTypes(prev => [...prev, {
+      kind: 'new', name: draft.name, caliber: draft.caliber,
+      brand: draft.brand, grain: draft.grain, quantity, price: draft.price,
+    }])
+    setDraft({ name: '', caliber: '', brand: '', grain: '', quantity: '', price: '' })
+    setShowNew(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl border border-neutral-200 p-5 max-w-md w-full">
+        <h3 className="text-base font-semibold text-neutral-900">Add Ammo</h3>
+        <p className="text-sm text-neutral-500 mt-1">{caption}</p>
+
+        <div className="mt-3 space-y-2 max-h-72 overflow-y-auto">
+          {ammoTypes.map(t => (
+            <div key={t.id} className="flex items-center justify-between gap-2">
+              <div className="text-sm">
+                <p className="font-medium">{t.name}</p>
+                <p className="text-xs text-neutral-400">{t.caliber}</p>
+              </div>
+              <div className="flex items-center gap-1">
+                <input type="text" inputMode="numeric" pattern="[0-9]*" value={qty[t.id] ?? ''} placeholder="qty"
+                  onChange={e => {
+                    const v = e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '')
+                    setQty(prev => ({ ...prev, [t.id]: v }))
+                  }}
+                  className="w-16 px-2 py-1 border rounded-lg text-sm text-right" />
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400 text-sm pointer-events-none">$</span>
+                  <input type="text" inputMode="decimal" value={price[t.id] ?? ''} placeholder="0.00"
+                    onChange={e => {
+                      let v = e.target.value.replace(/[^0-9.]/g, '')
+                      const p = v.split('.')
+                      if (p.length > 2) v = p[0] + '.' + p.slice(1).join('')
+                      if (p[1]?.length > 2) v = p[0] + '.' + p[1].slice(0, 2)
+                      setPrice(prev => ({ ...prev, [t.id]: v }))
+                    }}
+                    className="w-20 pl-5 pr-2 py-1 border rounded-lg text-sm text-right" />
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {newTypes.length > 0 && (
+            <div className="pt-1 space-y-1">
+              {newTypes.map((nt, i) => (
+                <div key={i} className="flex items-center justify-between text-sm bg-neutral-50 rounded-lg px-3 py-2">
+                  <span className="font-medium">{nt.name} <span className="text-neutral-400 font-normal">· {nt.caliber}</span></span>
+                  <span className="text-neutral-500">{nt.quantity} · {nt.price ? `$${Number(nt.price).toFixed(2)}` : '—'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {showNew && (
+          <div className="mt-3 border rounded-lg p-3 space-y-2">
+            <input placeholder="Name" value={draft.name}
+              onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} className="px-2 py-1 border rounded text-sm w-full" />
+            <div className="flex gap-2">
+              <CaliberSelect value={draft.caliber} onChange={v => setDraft(d => ({ ...d, caliber: v }))} />
+              <input placeholder="Brand" value={draft.brand}
+                onChange={e => setDraft(d => ({ ...d, brand: e.target.value }))} className="px-2 py-1 border rounded text-sm w-24" />
+            </div>
+            <div className="flex gap-2">
+              <input placeholder="Grain" value={draft.grain}
+                onChange={e => setDraft(d => ({ ...d, grain: e.target.value.replace(/\D/g, '') }))} className="px-2 py-1 border rounded text-sm w-20" />
+              <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="Qty" value={draft.quantity}
+                onChange={e => setDraft(d => ({ ...d, quantity: e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') }))} className="px-2 py-1 border rounded text-sm w-20" />
+              <div className="relative w-20">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400 text-sm pointer-events-none">$</span>
+                <input type="text" inputMode="decimal" placeholder="0.00" value={draft.price}
+                  onChange={e => {
+                    let v = e.target.value.replace(/[^0-9.]/g, '')
+                    const p = v.split('.')
+                    if (p.length > 2) v = p[0] + '.' + p.slice(1).join('')
+                    if (p[1]?.length > 2) v = p[0] + '.' + p[1].slice(0, 2)
+                    setDraft(d => ({ ...d, price: v }))
+                  }} className="w-full pl-5 pr-2 py-1 border rounded text-sm" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={addNewType}
+                className="flex-1 px-2 py-1.5 bg-black text-white rounded-lg text-sm cursor-pointer hover:opacity-80">Add</button>
+              <button type="button" onClick={() => setShowNew(false)}
+                className="px-2 py-1.5 border rounded-lg text-sm cursor-pointer hover:bg-neutral-50">Cancel</button>
+            </div>
+          </div>
+        )}
+        {!showNew && (
+          <button type="button" onClick={() => setShowNew(true)}
+            className="text-sm text-neutral-600 mt-3 cursor-pointer hover:text-neutral-900">+ Add a new ammo type</button>
+        )}
+
+        <input type="text" placeholder="Note (optional)" value={note}
+          onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm w-full mt-3" />
+
+        <div className="flex gap-2 mt-4">
+          <button type="button" onClick={onClose}
+            className="flex-1 px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Cancel</button>
+          <button type="button" onClick={submit}
+            className="flex-1 px-3 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">Add</button>
+        </div>
       </div>
     </div>
   )
@@ -767,80 +1378,120 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
 }) {
   const [session, setSession] = useState(initialSession)
   const [bag, setBag] = useState<BagItem[]>(initialSession.bag ?? [])
+  const [weapons, setWeapons] = useState<Weapon[]>(initialSession.weapons ?? [])
+  const [gunLoaded, setGunLoaded] = useState<GunLoaded[]>(initialSession.gunLoaded ?? [])
+  const [strings, setStrings] = useState<RangeDayString[]>(initialSession.strings ?? [])
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>(initialAmmoTypes)
+
   const [showEndModal, setShowEndModal] = useState(false)
-  const [acquireAmmoTypeId, setAcquireAmmoTypeId] = useState(initialAmmoTypes[0]?.id ?? 0)
-  const [acquireQty, setAcquireQty] = useState('')
-  const [acquirePrice, setAcquirePrice] = useState('')
-  const [acquireVendor, setAcquireVendor] = useState('')
-  const [acquireError, setAcquireError] = useState('')
+  const [showAcquire, setShowAcquire] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     apiFetch('/ammo/types')
       .then(r => (r.ok ? r.json() : Promise.resolve([] as AmmoType[])))
-      .then((data: AmmoType[]) => {
-        if (cancelled) return
-        setAmmoTypes(data)
-        setAcquireAmmoTypeId(prev => prev || (data[0]?.id ?? 0))
-      })
+      .then((data: AmmoType[]) => { if (!cancelled) setAmmoTypes(data) })
       .catch(() => {})
     return () => { cancelled = true }
   }, [])
 
-  const refreshBag = async () => {
-    const res = await apiFetch(`/ammo/range-days/${session.id}`)
+  const typeForId = (id: number) => ammoTypes.find(t => t.id === id)
+  const weaponForId = (id: number) => weapons.find(w => w.id === id)
+
+  // Each weapon card owns its own form, so the weapon is implicit here.
+  const doAction = async (
+    action: 'load' | 'shoot' | 'return',
+    weaponId: number,
+    ammoTypeId: number,
+    rounds: number,
+    note: string,
+  ): Promise<string | null> => {
+    const res = await apiFetch(`/ammo/range-days/${session.id}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        weaponId, ammoTypeId, rounds,
+        ...(action === 'shoot' && note ? { note } : {}),
+      }),
+    })
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({ error: 'Error' }))
+      return d.error || 'Error'
+    }
+    const data = await res.json()
+    setBag(data.bag ?? [])
+    setGunLoaded(data.gunLoaded ?? [])
+    if (action === 'shoot' && data.string) setStrings(prev => [...prev, data.string])
+    if (action === 'return') setStrings(prev => [...prev, ...(data.strings ?? [])])
+    return null
+  }
+
+  const deleteString = async (id: number) => {
+    const res = await apiFetch(`/ammo/range-days/${session.id}/strings/${id}`, { method: 'DELETE' })
     if (res.ok) {
       const data = await res.json()
-      setSession(data)
       setBag(data.bag ?? [])
+      setGunLoaded(data.gunLoaded ?? [])
+      setStrings(data.strings ?? [])
     }
   }
 
-  const handleAcquire = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setAcquireError('')
-    const res = await apiFetch(`/ammo/range-days/${session.id}/acquire`, {
-      method: 'POST',
-      body: JSON.stringify({
-        ammo: [{
-          ammoTypeId: Number(acquireAmmoTypeId),
-          quantity: Number(acquireQty),
-          price: acquirePrice ? Math.round(Number(acquirePrice) * 100) : undefined,
-          vendor: acquireVendor || undefined,
-        }],
-      }),
-    })
-    if (!res.ok) { const d = await res.json(); setAcquireError(d.error || 'Error'); return }
-    const data = await res.json()
-    setBag(data.bag ?? [])
-    setAcquireQty('')
-    setAcquirePrice('')
-    setAcquireVendor('')
+  const handleAddAmmo = async (rows: AddAmmoRow[], note: string) => {
+    for (const r of rows) {
+      let ammoTypeId: number
+      if (r.kind === 'existing') {
+        ammoTypeId = r.ammoTypeId
+      } else {
+        const res = await apiFetch('/ammo/types', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: r.name,
+            caliber: r.caliber,
+            ...(r.brand ? { brand: r.brand } : {}),
+            ...(r.grain ? { grain: Number(r.grain) } : {}),
+          }),
+        })
+        if (!res.ok) continue
+        const t = await res.json()
+        ammoTypeId = t.id
+      }
+      await apiFetch(`/ammo/range-days/${session.id}/acquire`, {
+        method: 'POST',
+        body: JSON.stringify({
+          ammo: [{ ammoTypeId, quantity: r.quantity }],
+          note: note || null,
+          ...(r.price ? { price: Number(r.price) } : {}),
+        }),
+      })
+    }
+    const res = await apiFetch(`/ammo/range-days/${session.id}`)
+    if (res.ok) {
+      const d = await res.json()
+      setBag(d.bag ?? [])
+    }
+    setShowAcquire(false)
   }
 
-  const handleEnd = async (returnAmmo: AmmoRow[]) => {
+  const handleEnd = async () => {
     const res = await apiFetch(`/ammo/range-days/${session.id}/end`, {
       method: 'POST',
-      body: JSON.stringify({ returnAmmo }),
+      body: JSON.stringify({}),
     })
     if (!res.ok) { alert('Error ending session'); return }
     setShowEndModal(false)
     onSessionEnd()
   }
 
-  const typeForId = (id: number) => ammoTypes.find(t => t.id === id)
-
   return (
     <div className="min-h-screen bg-neutral-50">
       {showEndModal && (
-        <EndSessionModal
-          session={session}
-          bagContents={bag}
-          ammoTypes={ammoTypes}
-          onConfirm={handleEnd}
-          onCancel={() => setShowEndModal(false)}
-        />
+        <ConfirmEndModal bag={bag} strings={strings} weapons={weapons} ammoTypes={ammoTypes}
+          onConfirm={handleEnd} onCancel={() => setShowEndModal(false)} />
+      )}
+
+      {showAcquire && (
+        <AddAmmoModal ammoTypes={ammoTypes}
+          caption="Adds to your inventory and this range day's bag."
+          onSubmit={handleAddAmmo} onClose={() => setShowAcquire(false)} />
       )}
 
       <header className="border-b border-neutral-200 bg-white">
@@ -851,19 +1502,36 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
             {session.note && <span className="text-neutral-500 text-sm">· {session.note}</span>}
             <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-medium">Active</span>
           </div>
-          <button
-            onClick={() => setShowEndModal(true)}
-            className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 cursor-pointer"
-          >
+          <button onClick={() => setShowEndModal(true)}
+            className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 cursor-pointer">
             End Range Day
           </button>
         </div>
       </header>
 
       <main className="mx-auto max-w-4xl px-6 py-8 space-y-8">
-        {/* Bag Contents Table */}
+        {/* Per-weapon Load / Shoot / Return */}
         <section>
-          <h2 className="text-lg font-semibold mb-3">Bag Contents</h2>
+          <h2 className="text-lg font-semibold mb-3">Weapons</h2>
+          {weapons.length === 0 ? (
+            <p className="text-neutral-400 text-sm">No weapons selected for this range day.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {weapons.map(w => (
+                <WeaponRangeCard key={w.id} weapon={w} bag={bag} ammoTypes={ammoTypes}
+                  gunLoaded={gunLoaded} strings={strings} onAction={doAction} typeForId={typeForId} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Bag Contents */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Bag Contents</h2>
+            <button onClick={() => setShowAcquire(true)}
+              className="text-sm px-3 py-1.5 bg-black text-white rounded-lg hover:opacity-80 cursor-pointer">+ Buy More Ammo</button>
+          </div>
           {bag.length === 0 ? (
             <p className="text-neutral-400 text-sm">No ammo in bag.</p>
           ) : (
@@ -897,29 +1565,31 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
           )}
         </section>
 
-        {/* Acquire at Range */}
+        {/* Shooting strings */}
         <section>
-          <h2 className="text-lg font-semibold mb-3">Acquire at Range</h2>
-          <div className="rounded-xl border border-neutral-200 bg-white p-5">
-            <form onSubmit={handleAcquire} className="flex flex-col gap-3">
-              <div className="grid grid-cols-2 gap-2">
-                <select value={acquireAmmoTypeId} onChange={e => setAcquireAmmoTypeId(Number(e.target.value))}
-                  className="col-span-2 px-3 py-2 border rounded-lg text-sm">
-                  {ammoTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-                <input type="number" min="1" placeholder="Quantity" value={acquireQty} required
-                  onChange={e => setAcquireQty(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
-                <input type="number" min="0" step="0.01" placeholder="Price ($, optional)" value={acquirePrice}
-                  onChange={e => setAcquirePrice(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
-              </div>
-              <input type="text" placeholder="Vendor (optional)" value={acquireVendor}
-                onChange={e => setAcquireVendor(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
-              {acquireError && <p className="text-red-500 text-sm">{acquireError}</p>}
-              <button type="submit" className="px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">
-                Add to Bag
-              </button>
-            </form>
-          </div>
+          <h2 className="text-lg font-semibold mb-3">Shooting Log</h2>
+          {strings.length === 0 ? (
+            <p className="text-neutral-400 text-sm">No shots recorded yet.</p>
+          ) : (
+            <div className="divide-y divide-neutral-100 rounded-xl border border-neutral-200 bg-white">
+              {strings.slice().reverse().map(s => (
+                <div key={s.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">
+                      {weaponForId(s.weaponId)?.name ?? `Weapon #${s.weaponId}`}
+                      <span className="text-neutral-400 font-normal"> · {typeForId(s.ammoTypeId)?.name ?? `Type #${s.ammoTypeId}`}</span>
+                    </p>
+                    <p className="text-xs text-neutral-400">
+                      {s.rounds} rounds · {relativeTime(s.occurredAt)}
+                      {s.note ? ` · ${s.note}` : ''}
+                    </p>
+                  </div>
+                  <button onClick={() => deleteString(s.id)}
+                    className="text-xs text-neutral-400 hover:text-red-500 cursor-pointer">Delete</button>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       </main>
     </div>
@@ -931,7 +1601,7 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
 type EntryRow = { id: number; ammoTypeId: number; quantity: number; location: string; isBalancing: boolean }
 type TxWithEntries = Transaction & { entries: EntryRow[] }
 
-function AmmoTypeDetailView({ item, onBack }: { item: InventoryItem; onBack: () => void }) {
+function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryItem; onBack: () => void; refreshKey?: number }) {
   const [transactions, setTransactions] = useState<TxWithEntries[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -942,7 +1612,7 @@ function AmmoTypeDetailView({ item, onBack }: { item: InventoryItem; onBack: () 
       .then(setTransactions)
       .catch(() => setTransactions([]))
       .finally(() => setLoading(false))
-  }, [item.id])
+  }, [item.id, refreshKey])
 
   // Net change per transaction = sum of ALL non-balancing entries for this ammo type.
   // Equity (balancing) entries are excluded — they're accounting artefacts, not real rounds.
@@ -973,6 +1643,18 @@ function AmmoTypeDetailView({ item, onBack }: { item: InventoryItem; onBack: () 
     return withBalance.reverse()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions])
+
+  const avgPrice = useMemo(() => {
+    let totalCents = 0
+    let totalRounds = 0
+    for (const tx of transactions) {
+      if (tx.price == null) continue
+      const net = tx.entries.filter(e => !e.isBalancing && e.ammoTypeId === item.id).reduce((s, e) => s + e.quantity, 0)
+      if (net > 0) { totalCents += tx.price; totalRounds += net }
+    }
+    if (totalRounds === 0) return null
+    return { perRound: totalCents / totalRounds / 100, totalCents, totalRounds }
+  }, [transactions, item.id])
 
   function netLabel(net: number, tx: TxWithEntries): React.ReactNode {
     if (net === 0) {
@@ -1023,6 +1705,18 @@ function AmmoTypeDetailView({ item, onBack }: { item: InventoryItem; onBack: () 
             <p className="text-xs text-neutral-400 mt-0.5">rounds in storage</p>
           </div>
         </div>
+        {avgPrice && (
+          <div className="mt-4 pt-4 border-t border-neutral-100 flex gap-6 text-sm">
+            <div>
+              <p className="text-xs text-neutral-400 uppercase tracking-wide">Avg price / round</p>
+              <p className="font-semibold text-neutral-900 tabular-nums">${avgPrice.perRound.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-neutral-400 uppercase tracking-wide">Total tracked</p>
+              <p className="font-medium text-neutral-600 tabular-nums">{avgPrice.totalRounds.toLocaleString()} rds · ${(avgPrice.totalCents / 100).toFixed(2)}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Transaction history */}
@@ -1044,6 +1738,7 @@ function AmmoTypeDetailView({ item, onBack }: { item: InventoryItem; onBack: () 
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Note</th>
+                <th className="px-4 py-3 text-right">Price paid</th>
                 <th className="px-4 py-3 text-right">Change</th>
                 <th className="px-4 py-3 text-right">Balance</th>
               </tr>
@@ -1063,6 +1758,16 @@ function AmmoTypeDetailView({ item, onBack }: { item: InventoryItem; onBack: () 
                   </td>
                   <td className="px-4 py-3 text-neutral-600 max-w-[200px] truncate">
                     {tx.note ?? <span className="text-neutral-300">—</span>}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
+                    {tx.price != null ? (
+                      <span className="text-neutral-700">
+                        ${(tx.price / 100).toFixed(2)}
+                        {net > 0 && <span className="text-neutral-400 text-xs ml-1">(${(tx.price / net / 100).toFixed(2)}/rd)</span>}
+                      </span>
+                    ) : (
+                      <span className="text-neutral-300">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {netLabel(net, tx)}
@@ -1126,7 +1831,8 @@ function CaliberDetailView({ group, refreshKey = 0, onBack }: { group: CaliberGr
   }, [txMap, typeIds])
 
   if (viewingItem) {
-    return <AmmoTypeDetailView item={viewingItem} onBack={() => setViewingItem(null)} />
+    const liveItem = group.items.find(i => i.id === viewingItem.id) ?? viewingItem
+    return <AmmoTypeDetailView item={liveItem} refreshKey={refreshKey} onBack={() => setViewingItem(null)} />
   }
 
   return (
@@ -1241,24 +1947,617 @@ function CaliberDetailView({ group, refreshKey = 0, onBack }: { group: CaliberGr
   )
 }
 
+function NewWeaponForm({ onSuccess, onClose }: { onSuccess: () => void; onClose: () => void }) {
+  const [name, setName] = useState('')
+  const [caliber, setCaliber] = useState('')
+  const [type, setType] = useState('handgun')
+  const [serialNumber, setSerialNumber] = useState('')
+  const [notes, setNotes] = useState('')
+  const [error, setError] = useState('')
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    if (!name || !caliber) { setError('Name and caliber are required'); return }
+    const res = await apiFetch('/weapons', {
+      method: 'POST',
+      body: JSON.stringify({
+        name, caliber, type,
+        serialNumber: serialNumber || null,
+        notes: notes || null,
+      }),
+    })
+    if (!res.ok) { const d = await res.json(); setError(d.error || 'Error'); return }
+    onSuccess()
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-3">
+      <input type="text" placeholder="Name (e.g. Glock 19)" value={name} required
+        onChange={e => setName(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
+      <CaliberSelect value={caliber} onChange={setCaliber} />
+      <select value={type} onChange={e => setType(e.target.value)}
+        className="px-3 py-2 border rounded-lg text-sm">
+        <option value="handgun">Handgun</option>
+        <option value="rifle">Rifle</option>
+        <option value="shotgun">Shotgun</option>
+      </select>
+      <input type="text" placeholder="Serial number (optional)" value={serialNumber}
+        onChange={e => setSerialNumber(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
+      <input type="text" placeholder="Notes (optional)" value={notes}
+        onChange={e => setNotes(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
+      {error && <p className="text-red-500 text-sm">{error}</p>}
+      <button type="submit" className="px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">Create</button>
+    </form>
+  )
+}
+
+function CleaningModal({ weapon, totalRounds, cleanings, onClose, onSaved }: {
+  weapon: Weapon; totalRounds: number; cleanings: WeaponCleaning[]; onClose: () => void; onSaved: () => void
+}) {
+  const latest = cleanings[0] ?? null
+  const [intervalRounds, setIntervalRounds] = useState<string>(weapon.cleaningIntervalRounds?.toString() ?? '')
+  const [intervalDays, setIntervalDays] = useState<string>(weapon.cleaningIntervalDays?.toString() ?? '')
+  const [customRounds, setCustomRounds] = useState(false)
+  const [customDays, setCustomDays] = useState(false)
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const baselineRounds = latest?.roundCountAtCleaning ?? 0
+  const baselineDate = latest ? new Date(latest.cleanedAt) : new Date(weapon.createdAt)
+  const roundsSince = totalRounds - baselineRounds
+  const daysSince = Math.max(0, Math.floor((Date.now() - baselineDate.getTime()) / 86400000))
+  const rInt = intervalRounds ? Number(intervalRounds) : null
+  const dInt = intervalDays ? Number(intervalDays) : null
+  const dueRounds = rInt != null ? rInt - roundsSince : null
+  const dueDays = dInt != null ? dInt - daysSince : null
+  const pctRounds = rInt ? Math.min(100, Math.max(0, (roundsSince / rInt) * 100)) : 0
+  const pctDays = dInt ? Math.min(100, Math.max(0, (daysSince / dInt) * 100)) : 0
+  const overdue = (dueRounds != null && dueRounds <= 0) || (dueDays != null && dueDays <= 0)
+
+  const saveIntervals = async () => {
+    setSaving(true)
+    const body: Record<string, unknown> = {
+      cleaningIntervalRounds: intervalRounds ? Number(intervalRounds) : null,
+      cleaningIntervalDays: intervalDays ? Number(intervalDays) : null,
+    }
+    const res = await apiFetch(`/weapons/${weapon.id}`, { method: 'PATCH', body: JSON.stringify(body) })
+    setSaving(false)
+    if (!res.ok) { const d = await res.json(); alert(d.error || 'Error'); return }
+    onSaved()
+  }
+
+  const logNow = async () => {
+    const res = await apiFetch(`/weapons/${weapon.id}/cleanings`, {
+      method: 'POST',
+      body: JSON.stringify({ roundCountAtCleaning: totalRounds, note: note || null }),
+    })
+    if (!res.ok) { const d = await res.json(); alert(d.error || 'Error'); return }
+    setNote('')
+    onSaved()
+  }
+
+  const chip = (active: boolean) => `px-2.5 py-1 rounded-full text-xs border cursor-pointer ${active ? 'bg-black text-white border-black' : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-400'}`
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl border border-neutral-200 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-neutral-900">Cleaning — {weapon.name}</h3>
+              <p className="text-xs text-neutral-400 mt-1">{weapon.type} · {weapon.caliber} · {totalRounds.toLocaleString()} rds fired</p>
+            </div>
+            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 text-xl leading-none cursor-pointer">×</button>
+          </div>
+
+          <div className="mt-4 rounded-lg bg-neutral-50 border border-neutral-200 p-3">
+            <div className="flex justify-between text-xs">
+              <span className="text-neutral-500">Since clean: <span className="font-semibold text-neutral-900">{roundsSince.toLocaleString()} rds</span> · {daysSince}d</span>
+              <span className={overdue ? 'text-red-600 font-semibold' : 'text-neutral-500'}>
+                {overdue ? `Overdue by ${dueRounds != null && dueRounds <= 0 ? Math.abs(dueRounds) + ' rds' : ''}${dueRounds != null && dueRounds <= 0 && dueDays != null && dueDays <= 0 ? ' · ' : ''}${dueDays != null && dueDays <= 0 ? Math.abs(dueDays) + 'd' : ''}` : `${dueRounds != null ? `Due in ${dueRounds} rds` : ''}${dueRounds != null && dueDays != null ? ' · ' : ''}${dueDays != null ? `in ${dueDays}d` : ''}${dueRounds == null && dueDays == null ? 'No interval set' : ''}`}
+              </span>
+            </div>
+            {rInt != null && (
+              <div className="mt-2">
+                <div className="flex justify-between text-[11px] text-neutral-400 mb-1"><span>Rounds</span><span>{roundsSince}/{rInt}</span></div>
+                <div className="h-2 bg-neutral-200 rounded-full overflow-hidden"><div className={`h-full ${overdue && dueRounds != null && dueRounds <= 0 ? 'bg-red-500' : 'bg-neutral-900'}`} style={{ width: `${pctRounds}%` }} /></div>
+              </div>
+            )}
+            {dInt != null && (
+              <div className="mt-2">
+                <div className="flex justify-between text-[11px] text-neutral-400 mb-1"><span>Time</span><span>{daysSince}/{dInt}d</span></div>
+                <div className="h-2 bg-neutral-200 rounded-full overflow-hidden"><div className={`h-full ${overdue && dueDays != null && dueDays <= 0 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${pctDays}%` }} /></div>
+              </div>
+            )}
+            <p className="text-[11px] text-neutral-400 mt-2">Last: {latest ? `${new Date(latest.cleanedAt).toLocaleDateString()} @ ${latest.roundCountAtCleaning.toLocaleString()} rds` : `Never — since ${new Date(weapon.createdAt).toLocaleDateString()} @ 0 rds`}</p>
+          </div>
+
+          <div className="mt-5">
+            <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Interval — rounds</p>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {[250, 500, 1000].map(n => (
+                <button key={n} type="button" onClick={() => { setIntervalRounds(String(n)); setCustomRounds(false) }} className={chip(intervalRounds === String(n))}>{n}</button>
+              ))}
+              <button type="button" onClick={() => setCustomRounds(v => !v)} className={chip(customRounds)}>Custom</button>
+              <button type="button" onClick={() => { setIntervalRounds(''); setCustomRounds(false) }} className={chip(intervalRounds === '')}>None</button>
+            </div>
+            {customRounds && (
+              <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="e.g. 750" value={intervalRounds} onChange={e => setIntervalRounds(e.target.value.replace(/\D/g, ''))} className="mt-2 w-32 px-2 py-1 border rounded text-sm" />
+            )}
+          </div>
+
+          <div className="mt-4">
+            <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Interval — time</p>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {[30, 90, 180, 365].map(n => (
+                <button key={n} type="button" onClick={() => { setIntervalDays(String(n)); setCustomDays(false) }} className={chip(intervalDays === String(n))}>{n}d</button>
+              ))}
+              <button type="button" onClick={() => setCustomDays(v => !v)} className={chip(customDays)}>Custom</button>
+              <button type="button" onClick={() => { setIntervalDays(''); setCustomDays(false) }} className={chip(intervalDays === '')}>None</button>
+            </div>
+            {customDays && (
+              <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="e.g. 60" value={intervalDays} onChange={e => setIntervalDays(e.target.value.replace(/\D/g, ''))} className="mt-2 w-32 px-2 py-1 border rounded text-sm" />
+            )}
+            <p className="text-[11px] text-neutral-400 mt-1">Quick chips: 30d / 90d (3mo) / 180d / 365d</p>
+          </div>
+
+          <div className="mt-5">
+            <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Log cleaning</p>
+            <input type="text" placeholder="Note (optional)" value={note} onChange={e => setNote(e.target.value)} className="mt-2 w-full px-3 py-2 border rounded-lg text-sm" />
+            <button type="button" onClick={logNow} className="mt-2 w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 cursor-pointer">Log Cleaning Now @ {totalRounds.toLocaleString()} rds</button>
+            <p className="text-[11px] text-neutral-400 mt-1 text-center">Sets last cleaned to now — exported with history</p>
+          </div>
+
+          {cleanings.length > 0 && (
+            <div className="mt-5">
+              <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">History ({cleanings.length})</p>
+              <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                {cleanings.map(c => (
+                  <div key={c.id} className="flex justify-between items-center text-sm border border-neutral-100 rounded-lg px-3 py-2">
+                    <span className="text-neutral-700">{new Date(c.cleanedAt).toLocaleDateString()} <span className="text-neutral-400">@ {c.roundCountAtCleaning.toLocaleString()} rds</span></span>
+                    <span className="text-xs text-neutral-400 truncate max-w-[120px]">{c.note ?? ''}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 mt-6">
+            <button type="button" onClick={onClose} className="flex-1 px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Cancel</button>
+            <button type="button" onClick={saveIntervals} disabled={saving} className="flex-1 px-3 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 disabled:opacity-40 cursor-pointer">Save intervals</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function WeaponManager({ weapons, onRefresh }: { weapons: Weapon[]; onRefresh: () => void }) {
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editData, setEditData] = useState<Partial<Weapon>>({})
+  const [error, setError] = useState('')
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [history, setHistory] = useState<Record<number, any>>({})
+  const [historyLoading, setHistoryLoading] = useState<Record<number, boolean>>({})
+  const [totals, setTotals] = useState<Record<number, number>>({})
+  const [cleanings, setCleanings] = useState<Record<number, WeaponCleaning[]>>({})
+  const [cleaningWeapon, setCleaningWeapon] = useState<Weapon | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch('/weapons/firing-summary')
+      .then(r => (r.ok ? r.json() : Promise.resolve([])))
+      .then((arr: { weaponId: number; totalRounds: number }[]) => {
+        if (cancelled) return
+        const map: Record<number, number> = {}
+        for (const t of arr) map[t.weaponId] = t.totalRounds
+        setTotals(map)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (weapons.length === 0) return
+    let cancelled = false
+    Promise.all(weapons.map(w => apiFetch(`/weapons/${w.id}/cleanings`).then(r => r.ok ? r.json() : []).then((arr: WeaponCleaning[]) => ({ id: w.id, arr })).catch(() => ({ id: w.id, arr: [] }))))
+      .then(results => {
+        if (cancelled) return
+        const map: Record<number, WeaponCleaning[]> = {}
+        for (const r of results) map[r.id] = r.arr
+        setCleanings(map)
+      })
+    return () => { cancelled = true }
+  }, [weapons])
+
+  const reloadCleanings = async (weaponId: number) => {
+    const res = await apiFetch(`/weapons/${weaponId}/cleanings`)
+    if (res.ok) {
+      const arr: WeaponCleaning[] = await res.json()
+      setCleanings(m => ({ ...m, [weaponId]: arr }))
+    }
+  }
+
+  const startEdit = (w: Weapon) => {
+    setEditingId(w.id)
+    setEditData({ name: w.name, caliber: w.caliber, type: w.type, serialNumber: w.serialNumber, notes: w.notes })
+  }
+
+  const saveEdit = async () => {
+    if (editingId == null) return
+    const res = await apiFetch(`/weapons/${editingId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(editData),
+    })
+    if (!res.ok) { const d = await res.json(); setError(d.error || 'Error'); return }
+    setEditingId(null)
+    onRefresh()
+  }
+
+  const deleteWeapon = async (id: number) => {
+    if (!confirm('Delete this weapon?')) return
+    const res = await apiFetch(`/weapons/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const d = await res.json()
+      alert(d.error || 'Cannot delete')
+      return
+    }
+    onRefresh()
+  }
+
+  const toggleExpand = async (w: Weapon) => {
+    if (expandedId === w.id) { setExpandedId(null); return }
+    setExpandedId(w.id)
+    if (!history[w.id]) {
+      setHistoryLoading(h => ({ ...h, [w.id]: true }))
+      try {
+        const res = await apiFetch(`/weapons/${w.id}/history`)
+        if (res.ok) {
+          const data = await res.json()
+          setHistory(h => ({ ...h, [w.id]: data }))
+        }
+      } finally {
+        setHistoryLoading(h => ({ ...h, [w.id]: false }))
+      }
+    }
+  }
+
+  const fmtDate = (d: string | Date) => new Date(d).toLocaleDateString()
+  const fmtTime = (d: string | Date) => new Date(d).toLocaleString()
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Your Weapons</h3>
+        <button onClick={() => setShowForm(s => !s)}
+          className="text-sm px-3 py-1.5 bg-black text-white rounded-lg cursor-pointer hover:opacity-80">
+          + New Weapon
+        </button>
+      </div>
+
+      {showForm && (
+        <QuickForm title="New Weapon" onClose={() => setShowForm(false)}>
+          <NewWeaponForm onSuccess={() => { setShowForm(false); onRefresh() }} onClose={() => setShowForm(false)} />
+        </QuickForm>
+      )}
+
+      {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
+
+      {weapons.length === 0 ? (
+        <p className="text-sm text-neutral-500">No weapons yet.</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
+          {weapons.map(w => {
+            const hist = history[w.id]
+            const total = totals[w.id]
+            const loading = historyLoading[w.id]
+            return (
+              <div key={w.id} className="rounded-xl border border-neutral-200 bg-white shadow-sm p-5 flex flex-col h-full">
+                {editingId === w.id ? (
+                  <div className="flex flex-col gap-2">
+                    <input value={editData.name ?? ''} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} className="px-2 py-1 border rounded text-sm" placeholder="Name" />
+                    <CaliberSelect value={editData.caliber ?? ''} onChange={v => setEditData(d => ({ ...d, caliber: v }))} />
+                    <select value={editData.type ?? 'handgun'} onChange={e => setEditData(d => ({ ...d, type: e.target.value }))} className="px-2 py-1 border rounded text-sm">
+                      <option value="handgun">Handgun</option>
+                      <option value="rifle">Rifle</option>
+                      <option value="shotgun">Shotgun</option>
+                    </select>
+                    <input value={editData.serialNumber ?? ''} onChange={e => setEditData(d => ({ ...d, serialNumber: e.target.value || null }))} className="px-2 py-1 border rounded text-sm" placeholder="Serial" />
+                    <input value={editData.notes ?? ''} onChange={e => setEditData(d => ({ ...d, notes: e.target.value || null }))} className="px-2 py-1 border rounded text-sm" placeholder="Notes" />
+                    <div className="flex gap-2 mt-1">
+                      <button onClick={saveEdit} className="text-xs px-2 py-1 bg-black text-white rounded cursor-pointer hover:opacity-80">Save</button>
+                      <button onClick={() => setEditingId(null)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-lg font-bold text-neutral-900">{w.name}</p>
+                        <p className="text-xs text-neutral-400 capitalize mt-0.5">{w.type} · {w.caliber}</p>
+                      </div>
+                      <span className="shrink-0 text-xs bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full">{w.caliber}</span>
+                    </div>
+
+                    <div className="mt-4">
+                      <p className="text-3xl font-bold text-neutral-900">{total?.toLocaleString() ?? '0'}</p>
+                      <p className="text-xs text-neutral-400 mt-1">rounds fired · total</p>
+                    </div>
+
+                    {w.serialNumber && <p className="text-xs text-neutral-500 mt-3">S/N: {w.serialNumber}</p>}
+                    {w.notes && <p className="text-xs text-neutral-500 mt-1 truncate">{w.notes}</p>}
+
+                    {(() => {
+                      const totalRounds = totals[w.id] ?? 0
+                      const cls = cleanings[w.id] ?? []
+                      const latest = cls[0] ?? null
+                      const baselineRounds = latest?.roundCountAtCleaning ?? 0
+                      const baselineDate = latest ? new Date(latest.cleanedAt) : new Date(w.createdAt)
+                      const roundsSince = Math.max(0, totalRounds - baselineRounds)
+                      const daysSince = Math.max(0, Math.floor((Date.now() - baselineDate.getTime()) / 86400000))
+                      const rInt = w.cleaningIntervalRounds
+                      const dInt = w.cleaningIntervalDays
+                      const hasSchedule = rInt != null || dInt != null
+                      if (!hasSchedule) {
+                        return (
+                          <div className="mt-3">
+                            <button onClick={() => setCleaningWeapon(w)} className="w-full text-xs px-3 py-2 border border-dashed border-neutral-300 rounded-lg text-neutral-500 hover:border-neutral-400 hover:text-neutral-700 cursor-pointer">
+                              No cleaning schedule · Set up →
+                            </button>
+                          </div>
+                        )
+                      }
+                      const dueRounds = rInt != null ? rInt - roundsSince : null
+                      const dueDays = dInt != null ? dInt - daysSince : null
+                      const overdue = (dueRounds != null && dueRounds <= 0) || (dueDays != null && dueDays <= 0)
+                      const pctRounds = rInt ? Math.min(100, Math.max(0, (roundsSince / rInt) * 100)) : 0
+                      const pctDays = dInt ? Math.min(100, Math.max(0, (daysSince / dInt) * 100)) : 0
+                      return (
+                        <div className={`mt-3 rounded-lg border p-3 ${overdue ? 'bg-red-50 border-red-200' : 'bg-neutral-50 border-neutral-200'}`}>
+                          <div className="flex items-center justify-between">
+                            <span className={`text-xs font-semibold ${overdue ? 'text-red-700' : 'text-neutral-700'}`}>{overdue ? 'Overdue' : 'Cleaning due'}</span>
+                            <button onClick={() => setCleaningWeapon(w)} className="text-[11px] text-neutral-500 hover:text-neutral-800 underline cursor-pointer">Manage →</button>
+                          </div>
+                          {rInt != null && (
+                            <div className="mt-2">
+                              <div className="flex justify-between text-[11px] text-neutral-500 mb-1"><span>{roundsSince}/{rInt} rds</span><span>{dueRounds! > 0 ? `${dueRounds} left` : `${Math.abs(dueRounds!)} over`}</span></div>
+                              <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden"><div className={`h-full ${dueRounds != null && dueRounds <= 0 ? 'bg-red-500' : 'bg-neutral-900'}`} style={{ width: `${pctRounds}%` }} /></div>
+                            </div>
+                          )}
+                          {dInt != null && (
+                            <div className="mt-2">
+                              <div className="flex justify-between text-[11px] text-neutral-500 mb-1"><span>{daysSince}/{dInt}d</span><span>{dueDays! > 0 ? `${dueDays}d left` : `${Math.abs(dueDays!)}d over`}</span></div>
+                              <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden"><div className={`h-full ${dueDays != null && dueDays <= 0 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${pctDays}%` }} /></div>
+                            </div>
+                          )}
+                          <p className="text-[11px] text-neutral-400 mt-2">Last: {latest ? `${new Date(latest.cleanedAt).toLocaleDateString()} @ ${latest.roundCountAtCleaning.toLocaleString()} rds` : `Never`}{latest?.note ? ` · ${latest.note}` : ''}</p>
+                        </div>
+                      )
+                    })()}
+
+                    <div className="flex items-center gap-2 mt-4 pt-3 border-t border-neutral-100">
+                      <button onClick={() => toggleExpand(w)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">
+                        {expandedId === w.id ? 'Hide History' : 'Firing History'}
+                      </button>
+                      <button onClick={() => startEdit(w)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">Edit</button>
+                      <button onClick={() => deleteWeapon(w.id)} className="text-xs px-2 py-1 border border-red-200 text-red-600 rounded cursor-pointer hover:bg-red-50">Delete</button>
+                    </div>
+
+                    {expandedId === w.id && (
+                      <div className="mt-3 pt-3 border-t border-neutral-100">
+                        {loading ? (
+                          <p className="text-sm text-neutral-500">Loading firing history…</p>
+                        ) : hist ? (
+                          <WeaponFiringHistoryView history={hist} fmtDate={fmtDate} fmtTime={fmtTime} />
+                        ) : (
+                          <p className="text-sm text-neutral-500">No firing history yet.</p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {cleaningWeapon && (
+        <CleaningModal
+          weapon={cleaningWeapon}
+          totalRounds={totals[cleaningWeapon.id] ?? 0}
+          cleanings={cleanings[cleaningWeapon.id] ?? []}
+          onClose={() => setCleaningWeapon(null)}
+          onSaved={async () => {
+            await reloadCleanings(cleaningWeapon.id)
+            onRefresh()
+            const res = await apiFetch(`/weapons/${cleaningWeapon.id}`)
+            if (res.ok) {
+              const updated: Weapon = await res.json()
+              setCleaningWeapon(updated)
+            }
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function WeaponFiringHistoryView({ history, fmtDate, fmtTime }: {
+  history: any
+  fmtDate: (d: string | Date) => string
+  fmtTime: (d: string | Date) => string
+}) {
+  const total = history.totalRounds ?? 0
+  const sessions: any[] = history.sessions ?? []
+  return (
+    <div>
+      <div className="flex items-baseline gap-2 mb-3">
+        <span className="text-2xl font-bold">{total.toLocaleString()}</span>
+        <span className="text-sm text-neutral-500">rounds fired total</span>
+      </div>
+
+      {history.byAmmoType?.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {history.byAmmoType.map((a: any) => (
+            <span key={a.ammoTypeId} className="text-xs px-2.5 py-1 bg-white border border-neutral-200 rounded-full text-neutral-700">
+              {a.name} ({a.caliber}): <span className="font-semibold">{a.rounds.toLocaleString()}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {sessions.length === 0 ? (
+        <p className="text-sm text-neutral-500">No range-day firing recorded for this weapon.</p>
+      ) : (
+        <div className="space-y-3">
+          {sessions.map(s => (
+            <div key={s.sessionId} className="border border-neutral-200 rounded-lg p-3 bg-white">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">{fmtDate(s.startedAt)}{s.endedAt ? '' : ' (in progress)'}</span>
+                <span className="text-xs text-neutral-500">{s.rounds.toLocaleString()} rounds</span>
+              </div>
+              {s.note && <p className="text-xs text-neutral-500 mb-2 italic">“{s.note}”</p>}
+              <ul className="space-y-1">
+                {s.strings.map((st: any) => (
+                  <li key={st.id} className="flex items-center justify-between text-sm">
+                    <span className="text-neutral-700">
+                      {st.ammoName} — <span className="font-medium">{st.rounds.toLocaleString()}</span> rounds
+                      {st.note ? <span className="text-neutral-500 italic"> “{st.note}”</span> : null}
+                    </span>
+                    <span className="text-xs text-neutral-400">{fmtTime(st.occurredAt)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InventoryDashboard({ inventory, weapons, totals, cleanings, onCaliberClick, onViewAmmo, onViewWeapons }: {
+  inventory: InventoryItem[]; weapons: Weapon[]; totals: Record<number, number>; cleanings: Record<number, WeaponCleaning[]>
+  onCaliberClick: (group: CaliberGroup) => void; onViewAmmo: () => void; onViewWeapons: () => void
+}) {
+  const groups = useMemo<CaliberGroup[]>(() => {
+    const map = new Map<string, InventoryItem[]>()
+    for (const item of inventory) {
+      const arr = map.get(item.caliber) ?? []
+      arr.push(item)
+      map.set(item.caliber, arr)
+    }
+    return [...map.entries()].map(([caliber, items]) => ({
+      caliber, items, totalBalance: items.reduce((sum, i) => sum + i.balance, 0),
+    }))
+  }, [inventory])
+  const totalRounds = useMemo(() => inventory.reduce((s, i) => s + i.balance, 0), [inventory])
+  const cleaningDue = useMemo(() => {
+    let c = 0
+    for (const w of weapons) {
+      const total = totals[w.id] ?? 0
+      const cls = cleanings[w.id] ?? []
+      const latest = cls[0] ?? null
+      const baselineRounds = latest?.roundCountAtCleaning ?? 0
+      const baselineDate = latest ? new Date(latest.cleanedAt) : new Date(w.createdAt)
+      const roundsSince = Math.max(0, total - baselineRounds)
+      const daysSince = Math.max(0, Math.floor((Date.now() - baselineDate.getTime()) / 86400000))
+      const rInt = w.cleaningIntervalRounds
+      const dInt = w.cleaningIntervalDays
+      if ((rInt != null && rInt - roundsSince <= 0) || (dInt != null && dInt - daysSince <= 0)) c++
+    }
+    return c
+  }, [weapons, totals, cleanings])
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+        <div className="rounded-xl border border-neutral-200 bg-white p-4">
+          <p className="text-xs text-neutral-400 uppercase tracking-wide">Weapons</p>
+          <p className="text-2xl font-bold mt-1">{weapons.length}</p>
+        </div>
+        <div className="rounded-xl border border-neutral-200 bg-white p-4">
+          <p className="text-xs text-neutral-400 uppercase tracking-wide">Rounds in storage</p>
+          <p className="text-2xl font-bold mt-1">{totalRounds.toLocaleString()}</p>
+        </div>
+        <div className="rounded-xl border border-neutral-200 bg-white p-4">
+          <p className="text-xs text-neutral-400 uppercase tracking-wide">Ammo types</p>
+          <p className="text-2xl font-bold mt-1">{inventory.length}</p>
+        </div>
+        <div className={`rounded-xl border p-4 ${cleaningDue > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-neutral-200'}`}>
+          <p className={`text-xs uppercase tracking-wide ${cleaningDue > 0 ? 'text-red-600' : 'text-neutral-400'}`}>Cleaning due</p>
+          <p className={`text-2xl font-bold mt-1 ${cleaningDue > 0 ? 'text-red-600' : ''}`}>{cleaningDue}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Ammo Overview</h3>
+        <button onClick={onViewAmmo} className="text-xs text-neutral-500 hover:text-neutral-800 underline cursor-pointer">View all →</button>
+      </div>
+      {groups.length === 0 ? (
+        <p className="text-sm text-neutral-500 mb-8">No ammo yet — add some in the Ammo tab.</p>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
+          {groups.slice(0, 3).map(group => (
+            <button key={group.caliber} onClick={() => onCaliberClick(group)} className="rounded-xl border border-neutral-200 bg-white p-4 text-left hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
+              <p className="text-sm font-semibold text-neutral-900">{group.caliber}</p>
+              <p className="text-xs text-neutral-400">{group.items.length} type{group.items.length !== 1 ? 's' : ''}</p>
+              <p className="text-xl font-bold mt-2">{group.totalBalance.toLocaleString()}</p>
+              <p className="text-xs text-neutral-400">rounds</p>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Weapons Preview</h3>
+        <button onClick={onViewWeapons} className="text-xs text-neutral-500 hover:text-neutral-800 underline cursor-pointer">View all →</button>
+      </div>
+      {weapons.length === 0 ? (
+        <p className="text-sm text-neutral-500">No weapons yet — add one in the Weapons tab.</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {weapons.slice(0, 3).map(w => {
+            const total = totals[w.id] ?? 0
+            return (
+              <div key={w.id} className="rounded-xl border border-neutral-200 bg-white p-4">
+                <p className="text-sm font-semibold truncate">{w.name}</p>
+                <p className="text-xs text-neutral-400 capitalize">{w.type} · {w.caliber}</p>
+                <p className="text-lg font-bold mt-2">{total.toLocaleString()} rds</p>
+                <p className="text-xs text-neutral-400">fired</p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Dashboard View ────────────────────────────────────────────────────────
 
-type QuickAction = 'acquire' | 'expend' | 'range-day' | 'adjust' | 'new-type' | null
+type QuickAction = 'acquire' | 'expend' | 'adjust' | 'new-type' | null
 
-function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResumeRangeDay }: {
+function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResumeRangeDay, onStartRangeDay }: {
   user: User
   onLogout: () => void
   onRangeDayStart: (session: RangeDaySession) => void
   activeSession: RangeDaySession | null
   onResumeRangeDay: () => void
+  onStartRangeDay: () => void
 }) {
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
+  const [weapons, setWeapons] = useState<Weapon[]>([])
   const [inventoryLoading, setInventoryLoading] = useState(true)
   const [activeAction, setActiveAction] = useState<QuickAction>(null)
-  const [tab, setTab] = useState<'inventory' | 'types' | 'history'>('inventory')
+  const [tab, setTab] = useState<'inventory' | 'ammo' | 'types' | 'weapons' | 'history'>('inventory')
   const [viewingCaliberName, setViewingCaliberName] = useState<string | null>(null)
   const [txRefreshKey, setTxRefreshKey] = useState(0)
+  const [weaponTotals, setWeaponTotals] = useState<Record<number, number>>({})
+  const [weaponCleanings, setWeaponCleanings] = useState<Record<number, WeaponCleaning[]>>({})
 
   // Derive the current CaliberGroup from live inventory so balance cards stay
   // up to date whenever loadInventory() resolves after a quick action.
@@ -1273,23 +2572,108 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
     }
   }, [viewingCaliberName, inventory])
 
+  const ammoGroups = useMemo<CaliberGroup[]>(() => {
+    const map = new Map<string, InventoryItem[]>()
+    for (const item of inventory) {
+      const arr = map.get(item.caliber) ?? []
+      arr.push(item)
+      map.set(item.caliber, arr)
+    }
+    return [...map.entries()].map(([caliber, items]) => ({
+      caliber, items, totalBalance: items.reduce((sum, i) => sum + i.balance, 0),
+    }))
+  }, [inventory])
+
   const loadInventory = useCallback(async () => {
     setInventoryLoading(true)
-    const [invRes, typesRes] = await Promise.all([
+    const safeJson = async (res: Response, fallback: unknown) => {
+      if (!res.ok) return fallback
+      try { return await res.json() } catch { return fallback }
+    }
+    const [invRes, typesRes, weaponsRes] = await Promise.all([
       apiFetch('/ammo/inventory'),
       apiFetch('/ammo/types'),
+      apiFetch('/weapons'),
     ])
-    if (invRes.ok) setInventory(await invRes.json())
-    if (typesRes.ok) setAmmoTypes(await typesRes.json())
+    setInventory(await safeJson(invRes, []))
+    setAmmoTypes(await safeJson(typesRes, []))
+    setWeapons(await safeJson(weaponsRes, []))
     setInventoryLoading(false)
   }, [])
 
   useEffect(() => { loadInventory() }, [loadInventory])
 
+  useEffect(() => {
+    let cancelled = false
+    apiFetch('/weapons/firing-summary')
+      .then(r => r.ok ? r.json() : [])
+      .then((arr: { weaponId: number; totalRounds: number }[]) => {
+        if (cancelled) return
+        const m: Record<number, number> = {}
+        for (const t of arr) m[t.weaponId] = t.totalRounds
+        setWeaponTotals(m)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [weapons.length])
+
+  useEffect(() => {
+    if (weapons.length === 0) return
+    let cancelled = false
+    Promise.all(weapons.map(w => apiFetch(`/weapons/${w.id}/cleanings`).then(r => r.ok ? r.json() : []).then((arr: WeaponCleaning[]) => ({ id: w.id, arr })).catch(() => ({ id: w.id, arr: [] as WeaponCleaning[] }))))
+      .then(results => {
+        if (cancelled) return
+        const m: Record<number, WeaponCleaning[]> = {}
+        for (const r of results) m[r.id] = r.arr
+        setWeaponCleanings(m)
+      })
+    return () => { cancelled = true }
+  }, [weapons])
+
   const handleActionSuccess = () => {
     setActiveAction(null)
     loadInventory()
     setTxRefreshKey(k => k + 1)
+  }
+
+  const handleAddAmmo = async (rows: AddAmmoRow[], note: string) => {
+    for (const r of rows) {
+      if (r.kind === 'existing') {
+        await apiFetch('/ammo/transactions', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: 'acquisition',
+            occurredAt: new Date().toISOString(),
+            note: note || null,
+            ...(r.price ? { price: Math.round(Number(r.price) * 100) } : {}),
+            entries: [{ ammoTypeId: r.ammoTypeId, quantity: r.quantity }],
+          }),
+        })
+      } else {
+        const res = await apiFetch('/ammo/types', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: r.name,
+            caliber: r.caliber,
+            ...(r.brand ? { brand: r.brand } : {}),
+            ...(r.grain ? { grain: Number(r.grain) } : {}),
+          }),
+        })
+        if (!res.ok) continue
+        const t = await res.json()
+        await apiFetch('/ammo/transactions', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: 'acquisition',
+            occurredAt: new Date().toISOString(),
+            note: note || null,
+            ...(r.price ? { price: Math.round(Number(r.price) * 100) } : {}),
+            entries: [{ ammoTypeId: t.id, quantity: r.quantity }],
+          }),
+        })
+      }
+    }
+    handleActionSuccess()
   }
 
   const handleRangeDayStart = (session: RangeDaySession) => {
@@ -1317,93 +2701,33 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
           Welcome{user.firstName ? `, ${user.firstName}` : ''}
         </h2>
 
-        {/* Active Range Day Banner */}
-        {activeSession && (
-          <button
-            onClick={onResumeRangeDay}
-            className="w-full mb-6 flex items-center justify-between px-5 py-3 rounded-xl bg-green-50 border border-green-200 text-green-800 hover:bg-green-100 transition-colors cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-semibold">Range Day Active</span>
-              {activeSession.note && <span className="text-sm text-green-700">· {activeSession.note}</span>}
-            </div>
-            <span className="text-sm font-medium">Return to Range Day →</span>
-          </button>
-        )}
-
-        {/* Quick Action Buttons */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          {([
-            { key: 'acquire', label: '+ Acquire' },
-            { key: 'expend', label: '- Expend' },
-            { key: 'range-day', label: '⇄ Range Day' },
-            { key: 'adjust', label: '↻ Adjust' },
-            { key: 'new-type', label: '+ New Type' },
-          ] as { key: QuickAction; label: string }[]).map(({ key, label }) => (
-            <button key={key}
-              onClick={() => setActiveAction(activeAction === key ? null : key)}
-              className={`px-4 py-2 rounded-lg text-sm border transition-colors cursor-pointer ${
-                activeAction === key
-                  ? 'bg-black text-white border-black'
-                  : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'
-              }`}>
-              {label}
+        {/* Range Day CTA */}
+        <div className="flex justify-end mb-6">
+          {activeSession ? (
+            <button
+              onClick={onResumeRangeDay}
+              className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm bg-green-600 text-white hover:bg-green-700 transition-colors cursor-pointer">
+              ⇄ Resume Range Day
             </button>
-          ))}
+          ) : (
+            <button
+              onClick={onStartRangeDay}
+              className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm bg-green-600 text-white hover:bg-green-700 transition-colors cursor-pointer">
+              ⇄ Start Range Day
+            </button>
+          )}
         </div>
-
-        {/* Quick Action Forms */}
-        {activeAction === 'acquire' && ammoTypes.length > 0 && (
-          <QuickForm title="Acquire Ammo" onClose={() => setActiveAction(null)}>
-            <AcquireForm ammoTypes={ammoTypes} onSuccess={handleActionSuccess} onClose={() => setActiveAction(null)} />
-          </QuickForm>
-        )}
-        {activeAction === 'acquire' && ammoTypes.length === 0 && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-5 mt-4">
-            <p className="text-sm text-neutral-500">Create an ammo type first.</p>
-          </div>
-        )}
-        {activeAction === 'expend' && ammoTypes.length > 0 && (
-          <QuickForm title="Record Expenditure" onClose={() => setActiveAction(null)}>
-            <ExpendForm ammoTypes={ammoTypes} onSuccess={handleActionSuccess} onClose={() => setActiveAction(null)} />
-          </QuickForm>
-        )}
-        {activeAction === 'expend' && ammoTypes.length === 0 && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-5 mt-4">
-            <p className="text-sm text-neutral-500">Create an ammo type first.</p>
-          </div>
-        )}
-        {activeAction === 'range-day' && ammoTypes.length > 0 && (
-          <QuickForm title="Start Range Day" onClose={() => setActiveAction(null)}>
-            <RangeDayStartForm ammoTypes={ammoTypes} onSuccess={handleRangeDayStart} onClose={() => setActiveAction(null)} />
-          </QuickForm>
-        )}
-        {activeAction === 'range-day' && ammoTypes.length === 0 && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-5 mt-4">
-            <p className="text-sm text-neutral-500">Create an ammo type first.</p>
-          </div>
-        )}
-        {activeAction === 'adjust' && ammoTypes.length > 0 && (
-          <QuickForm title="Adjust Inventory" onClose={() => setActiveAction(null)}>
-            <AdjustForm ammoTypes={ammoTypes} onSuccess={handleActionSuccess} onClose={() => setActiveAction(null)} />
-          </QuickForm>
-        )}
-        {activeAction === 'new-type' && (
-          <QuickForm title="New Ammo Type" onClose={() => setActiveAction(null)}>
-            <NewTypeForm onSuccess={handleActionSuccess} onClose={() => setActiveAction(null)} />
-          </QuickForm>
-        )}
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-neutral-200 mb-6 mt-8">
-          {(['inventory', 'types', 'history'] as const).map(t => (
-            <button key={t} onClick={() => { setTab(t); setViewingCaliberName(null) }}
+          {(['inventory', 'ammo', 'types', 'weapons', 'history'] as const).map(t => (
+            <button key={t} onClick={() => { setTab(t); setViewingCaliberName(null); setActiveAction(null) }}
               className={`px-4 py-2 text-sm font-medium capitalize cursor-pointer transition-colors ${
                 tab === t
                   ? 'border-b-2 border-black text-black'
                   : 'text-neutral-500 hover:text-neutral-700'
               }`}>
-              {t === 'types' ? 'Manage Types' : t === 'history' ? 'History' : 'Inventory'}
+              {t === 'weapons' ? 'Weapons' : t === 'types' ? 'Manage Types' : t === 'history' ? 'History' : t === 'ammo' ? 'Ammo' : 'Inventory'}
             </button>
           ))}
         </div>
@@ -1418,16 +2742,147 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
           ) : inventoryLoading ? (
             <p className="text-neutral-400 text-sm">Loading inventory...</p>
           ) : (
-            <InventoryCards
+            <InventoryDashboard
               inventory={inventory}
-              onEmpty={() => setActiveAction('new-type')}
+              weapons={weapons}
+              totals={weaponTotals}
+              cleanings={weaponCleanings}
               onCaliberClick={g => setViewingCaliberName(g.caliber)}
+              onViewAmmo={() => setTab('ammo')}
+              onViewWeapons={() => setTab('weapons')}
             />
+          )
+        )}
+
+        {tab === 'ammo' && (
+          viewingCaliber ? (
+            <CaliberDetailView
+              group={viewingCaliber}
+              refreshKey={txRefreshKey}
+              onBack={() => setViewingCaliberName(null)}
+            />
+          ) : (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Your Ammo</h3>
+                <button
+                  onClick={() => setActiveAction(activeAction === 'acquire' ? null : 'acquire')}
+                  className="text-sm px-3 py-1.5 bg-black text-white rounded-lg cursor-pointer hover:opacity-80"
+                >
+                  + Add Ammo
+                </button>
+              </div>
+              {activeAction === 'acquire' && (
+                <div className="mb-6">
+                  <AddAmmoModal
+                    ammoTypes={ammoTypes}
+                    caption="Adds to your inventory."
+                    onSubmit={handleAddAmmo}
+                    onClose={() => setActiveAction(null)}
+                  />
+                </div>
+              )}
+              {inventoryLoading ? (
+                <p className="text-neutral-400 text-sm">Loading inventory...</p>
+              ) : inventory.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-neutral-300 p-10 text-center">
+                  <p className="text-neutral-500 mb-4">No ammo types yet — add some to get started.</p>
+                  <button
+                    onClick={() => setActiveAction('new-type')}
+                    className="text-sm px-4 py-2 rounded-lg bg-black text-white hover:opacity-80 transition-opacity cursor-pointer"
+                  >
+                    + New Ammo Type
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {ammoGroups.map(group => (
+                      <div key={group.caliber} className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden flex flex-col">
+                        <button
+                          onClick={() => setViewingCaliberName(group.caliber)}
+                          className="flex-1 p-5 text-left hover:bg-neutral-50 transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-start justify-between mb-1">
+                            <p className="text-lg font-bold text-neutral-900">{group.caliber}</p>
+                            <span className="ml-2 shrink-0 text-xs bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full">
+                              {group.items.length} type{group.items.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <p className={`text-3xl font-bold mt-2 ${balanceColor(group.totalBalance)}`}>
+                            {group.totalBalance.toLocaleString()}
+                          </p>
+                          <p className="text-xs text-neutral-400 mt-1">rounds · tap for details</p>
+                        </button>
+                        <div className="flex gap-2 px-3 py-3 border-t border-neutral-100 bg-neutral-50">
+                          <button
+                            onClick={() => setActiveAction('adjust')}
+                            className="flex-1 text-xs px-2 py-1.5 bg-white border border-neutral-200 rounded-lg hover:border-neutral-400 cursor-pointer"
+                          >
+                            Adjust
+                          </button>
+                          <button
+                            onClick={() => setViewingCaliberName(group.caliber)}
+                            className="flex-1 text-xs px-2 py-1.5 bg-white border border-neutral-200 rounded-lg hover:border-neutral-400 cursor-pointer"
+                          >
+                            History
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-6">
+                    <button
+                      onClick={() => setActiveAction(activeAction === 'expend' ? null : 'expend')}
+                      className={`px-3 py-1.5 rounded-lg text-xs border cursor-pointer transition-colors ${activeAction === 'expend' ? 'bg-black text-white border-black' : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'}`}
+                    >
+                      - Expend
+                    </button>
+                    <button
+                      onClick={() => setActiveAction(activeAction === 'adjust' ? null : 'adjust')}
+                      className={`px-3 py-1.5 rounded-lg text-xs border cursor-pointer transition-colors ${activeAction === 'adjust' ? 'bg-black text-white border-black' : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'}`}
+                    >
+                      Adjust
+                    </button>
+                    <button
+                      onClick={() => setActiveAction(activeAction === 'new-type' ? null : 'new-type')}
+                      className={`px-3 py-1.5 rounded-lg text-xs border cursor-pointer transition-colors ${activeAction === 'new-type' ? 'bg-black text-white border-black' : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'}`}
+                    >
+                      + New Type
+                    </button>
+                  </div>
+                  {activeAction === 'expend' && ammoTypes.length > 0 && (
+                    <QuickForm title="Record Expenditure" onClose={() => setActiveAction(null)}>
+                      <ExpendForm ammoTypes={ammoTypes} onSuccess={handleActionSuccess} onClose={() => setActiveAction(null)} />
+                    </QuickForm>
+                  )}
+                  {activeAction === 'expend' && ammoTypes.length === 0 && (
+                    <div className="rounded-xl border border-neutral-200 bg-white p-5 mt-4">
+                      <p className="text-sm text-neutral-500">Create an ammo type first.</p>
+                    </div>
+                  )}
+                  {activeAction === 'adjust' && ammoTypes.length > 0 && (
+                    <QuickForm title="Adjust Inventory" onClose={() => setActiveAction(null)}>
+                      <AdjustForm ammoTypes={ammoTypes} onSuccess={handleActionSuccess} onClose={() => setActiveAction(null)} />
+                    </QuickForm>
+                  )}
+                  {activeAction === 'new-type' && (
+                    <QuickForm title="New Ammo Type" onClose={() => setActiveAction(null)}>
+                      <NewTypeForm onSuccess={handleActionSuccess} onClose={() => setActiveAction(null)} />
+                    </QuickForm>
+                  )}
+                </>
+              )}
+            </div>
           )
         )}
 
         {tab === 'types' && (
           <AmmoTypeManager ammoTypes={ammoTypes} onRefresh={loadInventory} />
+        )}
+
+        {tab === 'weapons' && (
+          <WeaponManager weapons={weapons} onRefresh={loadInventory} />
         )}
 
         {tab === 'history' && (
@@ -1493,7 +2948,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeSession, setActiveSession] = useState<RangeDaySession | null>(null)
-  const [page, setPage] = useState<'dashboard' | 'range-day'>('dashboard')
+  const [page, setPage] = useState<'dashboard' | 'range-day' | 'range-day-start'>('dashboard')
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
 
   // On mount, restore session from localStorage
@@ -1569,6 +3024,15 @@ function App() {
     )
   }
 
+  if (page === 'range-day-start') {
+    return (
+      <RangeDayStartWizard
+        onComplete={handleRangeDayStart}
+        onCancel={() => setPage('dashboard')}
+      />
+    )
+  }
+
   return (
     <DashboardView
       user={user}
@@ -1576,6 +3040,7 @@ function App() {
       onRangeDayStart={handleRangeDayStart}
       activeSession={activeSession}
       onResumeRangeDay={() => setPage('range-day')}
+      onStartRangeDay={() => setPage('range-day-start')}
     />
   )
 }
