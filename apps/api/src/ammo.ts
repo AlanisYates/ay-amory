@@ -269,6 +269,14 @@ ammo.get('/range-days/:id', async (c) => {
   return c.json({ ...session, bag, weapons, strings, gunLoaded })
 })
 
+ammo.get('/range-days/:id/transactions', async (c) => {
+  const userId = getUserId(c)
+  const id = Number(c.req.param('id'))
+  const session = await ammoRepository.getRangeDaySession(id, userId)
+  if (!session) return c.json({ error: 'Not found' }, 404)
+  return c.json(await ammoRepository.listTransactionsForRangeDay(id, userId))
+})
+
 // POST /ammo/range-days/:id/acquire  — on-site purchase
 ammo.post('/range-days/:id/acquire', async (c) => {
   const userId = getUserId(c)

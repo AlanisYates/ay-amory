@@ -316,6 +316,18 @@ export const ammoRepository = {
     }))
   },
 
+  async listTransactionsForRangeDay(sessionId: number, userId: number): Promise<TransactionWithEntries[]> {
+    const txs = await db
+      .select()
+      .from(ammoTransactions)
+      .where(and(eq(ammoTransactions.userId, userId), eq(ammoTransactions.rangeDaySessionId, sessionId)))
+      .orderBy(ammoTransactions.occurredAt)
+    if (txs.length === 0) return []
+    const txIds = txs.map(t => t.id)
+    const entries = await db.select().from(ammoLedgerEntries).where(inArray(ammoLedgerEntries.transactionId, txIds))
+    return txs.map(tx => ({ ...tx, entries: entries.filter(e => e.transactionId === tx.id) }))
+  },
+
   // ── Range Day Weapons (brought guns) ─────────────────────────────────────
 
   async createRangeDayWeapons(sessionId: number, weaponIds: number[]): Promise<void> {

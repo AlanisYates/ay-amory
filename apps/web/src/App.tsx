@@ -2541,6 +2541,227 @@ function InventoryDashboard({ inventory, weapons, totals, cleanings, onCaliberCl
   )
 }
 
+function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClose: () => void }) {
+  const [detail, setDetail] = useState<any>(null)
+  const [txs, setTxs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    Promise.all([
+      apiFetch(`/ammo/range-days/${sessionId}`).then(r => r.ok ? r.json() : null),
+      apiFetch(`/ammo/range-days/${sessionId}/transactions`).then(r => r.ok ? r.json() : []),
+      apiFetch('/ammo/types').then(r => r.ok ? r.json() : []),
+    ]).then(([d, t, a]) => {
+      if (cancelled) return
+      setDetail(d)
+      setTxs(Array.isArray(t) ? t : [])
+      setAmmoTypes(Array.isArray(a) ? a : [])
+      setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [sessionId])
+
+  const typeById = useMemo(() => new Map(ammoTypes.map(t => [t.id, t])), [ammoTypes])
+
+  if (loading) return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl p-6">Loading session…</div>
+    </div>
+  )
+  if (!detail) return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl p-6">Not found <button onClick={onClose} className="ml-4 text-sm underline cursor-pointer">Close</button></div>
+    </div>
+  )
+
+  const started = new Date(detail.startedAt)
+  const ended = detail.endedAt ? new Date(detail.endedAt) : null
+  const mins = ended ? Math.round((ended.getTime() - started.getTime()) / 60000) : null
+  const duration = mins != null ? `${Math.floor(mins / 60)}h ${mins % 60}m` : 'In progress'
+  const strings: any[] = detail.strings ?? []
+  const totalFired = strings.reduce((s: number, x: any) => s + (x.rounds ?? 0), 0)
+  const byWeapon = new Map<number, number>()
+  const byAmmo = new Map<number, number>()
+  for (const s of strings) {
+    byWeapon.set(s.weaponId, (byWeapon.get(s.weaponId) ?? 0) + s.rounds)
+    byAmmo.set(s.ammoTypeId, (byAmmo.get(s.ammoTypeId) ?? 0) + s.rounds)
+  }
+  const sessionCostCents = txs.filter((t: any) => t.rangeDaySessionId === sessionId && t.price != null).reduce((s: number, t: any) => s + t.price, 0)
+  const acquired = txs.filter((t: any) => t.type === 'acquisition' && t.rangeDaySessionId === sessionId)
+  const bag: any[] = detail.bag ?? []
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
+      <div className="bg-white rounded-xl border border-neutral-200 max-w-2xl w-full my-8">
+        <div className="p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-neutral-900">{started.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} · {duration}</h3>
+              <p className="text-xs text-neutral-400 mt-1">{started.toLocaleString()} {ended ? `→ ${ended.toLocaleString()}` : ''}</p>
+              {detail.note && <p className="text-sm text-neutral-600 mt-2 italic">“{detail.note}”</p>}
+            </div>
+            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 text-xl leading-none cursor-pointer">×</button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 mt-6">
+            <div className="rounded-lg bg-neutral-50 border border-neutral-200 p-3 text-center">
+              <p className="text-2xl font-bold">{totalFired.toLocaleString()}</p>
+              <p className="text-xs text-neutral-400">rds fired</p>
+            </div>
+            <div className="rounded-lg bg-neutral-50 border border-neutral-200 p-3 text-center">
+              <p className="text-2xl font-bold">{detail.weapons?.length ?? 0}</p>
+              <p className="text-xs text-neutral-400">weapons</p>
+            </div>
+            <div className="rounded-lg bg-neutral-50 border border-neutral-200 p-3 text-center">
+              <p className="text-2xl font-bold">{sessionCostCents ? `$${(sessionCostCents / 100).toFixed(2)}` : '—'}</p>
+              <p className="text-xs text-neutral-400">on-site cost</p>
+            </div>
+          </div>
+
+          {byWeapon.size > 0 && (
+            <div className="mt-6">
+              <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Per weapon</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {[...byWeapon.entries()].map(([wid, rds]) => {
+                  const w = detail.weapons?.find((x: any) => x.id === wid)
+                  return <span key={wid} className="text-xs px-2.5 py-1 bg-white border border-neutral-200 rounded-full">{w?.name ?? `Weapon #${wid}`} — <span className="font-semibold">{rds}</span> rds</span>
+                })}
+              </div>
+            </div>
+          )}
+
+          {byAmmo.size > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Per ammo</p>
+              <div className="mt-2 space-y-2">
+                {[...byAmmo.entries()].map(([aid, rds]) => {
+                  const t = typeById.get(aid)
+                  const avg = t ? null : null
+                  return (
+                    <div key={aid} className="flex justify-between items-center text-sm border border-neutral-100 rounded-lg px-3 py-2">
+                      <span className="font-medium">{t?.name ?? `Type #${aid}`} <span className="text-neutral-400 font-normal">· {t?.caliber ?? ''} · {rds} rds fired</span></span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {acquired.length > 0 && (
+            <div className="mt-6">
+              <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Acquired on-site</p>
+              <div className="mt-2 space-y-1">
+                {acquired.map((tx: any) => {
+                  const entry = tx.entries?.find((e: any) => !e.isBalancing)
+                  const t = entry ? typeById.get(entry.ammoTypeId) : null
+                  const qty = entry ? Math.abs(entry.quantity) : 0
+                  const perRd = qty > 0 && tx.price != null ? (tx.price / qty / 100) : null
+                  return (
+                    <div key={tx.id} className="flex justify-between items-center text-sm border border-green-100 bg-green-50 rounded-lg px-3 py-2">
+                      <span>{t?.name ?? `Type #${entry?.ammoTypeId}`} +{qty} rds</span>
+                      <span className="tabular-nums font-medium">{tx.price != null ? `$${(tx.price / 100).toFixed(2)}` : '—'}{perRd != null ? <span className="text-neutral-500 font-normal"> (${perRd.toFixed(2)}/rd)</span> : null}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-neutral-400 mt-2">Price shown is total paid for that acquisition; per-round is price ÷ quantity. Avg $/round in Inventory is lifetime avg across all acquisitions where price was tracked.</p>
+            </div>
+          )}
+
+          <div className="mt-6">
+            <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Strings</p>
+            {strings.length === 0 ? (
+              <p className="text-sm text-neutral-400 mt-2">No shots recorded.</p>
+            ) : (
+              <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                {strings.map((s: any) => {
+                  const w = detail.weapons?.find((x: any) => x.id === s.weaponId)
+                  const t = typeById.get(s.ammoTypeId)
+                  return <div key={s.id} className="flex justify-between text-sm border-b border-neutral-50 py-1"><span>{w?.name ?? `W#${s.weaponId}`} · {t?.name ?? `A#${s.ammoTypeId}`} — {s.rounds} rds {s.note ? `“${s.note}”` : ''}</span><span className="text-xs text-neutral-400">{new Date(s.occurredAt).toLocaleTimeString()}</span></div>
+                })}
+              </div>
+            )}
+          </div>
+
+          {bag.length > 0 && (
+            <div className="mt-6">
+              <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Bag at end</p>
+              <div className="mt-2 space-y-1">
+                {bag.map((b: any) => {
+                  const t = typeById.get(b.ammoTypeId)
+                  return <div key={b.ammoTypeId} className="flex justify-between text-sm border border-neutral-100 rounded-lg px-3 py-2"><span>{t?.name ?? `Type #${b.ammoTypeId}`}</span><span className="tabular-nums text-neutral-500">{b.inBag} left (took {b.taken}, +{b.acquired} on-site)</span></div>
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 mt-6">
+            <button onClick={onClose} className="flex-1 px-3 py-2 bg-black text-white rounded-lg text-sm cursor-pointer">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RangeDaysTab() {
+  const [sessions, setSessions] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [viewingId, setViewingId] = useState<number | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    apiFetch('/ammo/range-days')
+      .then(r => r.ok ? r.json() : [])
+      .then((arr: any[]) => setSessions(Array.isArray(arr) ? arr.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()) : []))
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (viewingId != null) return <RangeDayDetailDrawer sessionId={viewingId} onClose={() => setViewingId(null)} />
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Past Range Days</h3>
+        <span className="text-xs text-neutral-400">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
+      </div>
+      {loading ? (
+        <p className="text-sm text-neutral-400">Loading…</p>
+      ) : sessions.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-neutral-300 p-10 text-center">
+          <p className="text-sm text-neutral-500">No range days yet — start one from the dashboard header.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {sessions.map(s => {
+            const started = new Date(s.startedAt)
+            const ended = s.endedAt ? new Date(s.endedAt) : null
+            const mins = ended ? Math.round((ended.getTime() - started.getTime()) / 60000) : null
+            const duration = mins != null ? `${Math.floor(mins / 60)}h ${mins % 60}m` : 'In progress'
+            const isActive = !s.endedAt
+            return (
+              <button key={s.id} onClick={() => setViewingId(s.id)} className="w-full text-left rounded-xl border border-neutral-200 bg-white p-4 hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-900">{started.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} · {duration}</p>
+                    <p className="text-xs text-neutral-400 mt-1">{started.toLocaleString()}{ended ? ` → ${ended.toLocaleString()}` : ''}</p>
+                    {s.note && <p className="text-sm text-neutral-600 mt-2 italic">“{s.note}”</p>}
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isActive ? 'bg-green-100 text-green-700' : 'bg-neutral-100 text-neutral-500'}`}>{isActive ? 'Active' : 'Completed'}</span>
+                </div>
+                <p className="text-xs text-neutral-500 mt-3">View details →</p>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Dashboard View ────────────────────────────────────────────────────────
 
 type QuickAction = 'acquire' | 'expend' | 'adjust' | 'new-type' | null
@@ -2558,7 +2779,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
   const [weapons, setWeapons] = useState<Weapon[]>([])
   const [inventoryLoading, setInventoryLoading] = useState(true)
   const [activeAction, setActiveAction] = useState<QuickAction>(null)
-  const [tab, setTab] = useState<'inventory' | 'ammo' | 'types' | 'weapons' | 'history'>('inventory')
+  const [tab, setTab] = useState<'inventory' | 'ammo' | 'types' | 'weapons' | 'history' | 'range-days'>('inventory')
   const [viewingCaliberName, setViewingCaliberName] = useState<string | null>(null)
   const [txRefreshKey, setTxRefreshKey] = useState(0)
   const [weaponTotals, setWeaponTotals] = useState<Record<number, number>>({})
@@ -2724,15 +2945,15 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b border-neutral-200 mb-6 mt-8">
-          {(['inventory', 'ammo', 'types', 'weapons', 'history'] as const).map(t => (
+        <div className="flex gap-1 border-b border-neutral-200 mb-6 mt-8 overflow-x-auto">
+          {(['inventory', 'ammo', 'types', 'weapons', 'history', 'range-days'] as const).map(t => (
             <button key={t} onClick={() => { setTab(t); setViewingCaliberName(null); setActiveAction(null) }}
-              className={`px-4 py-2 text-sm font-medium capitalize cursor-pointer transition-colors ${
+              className={`px-4 py-2 text-sm font-medium capitalize cursor-pointer transition-colors whitespace-nowrap ${
                 tab === t
                   ? 'border-b-2 border-black text-black'
                   : 'text-neutral-500 hover:text-neutral-700'
               }`}>
-              {t === 'weapons' ? 'Weapons' : t === 'types' ? 'Manage Types' : t === 'history' ? 'History' : t === 'ammo' ? 'Ammo' : 'Inventory'}
+              {t === 'weapons' ? 'Weapons' : t === 'types' ? 'Manage Types' : t === 'history' ? 'History' : t === 'ammo' ? 'Ammo' : t === 'range-days' ? 'Range Days' : 'Inventory'}
             </button>
           ))}
         </div>
@@ -2892,6 +3113,10 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
 
         {tab === 'history' && (
           <TransactionHistory ammoTypes={ammoTypes} />
+        )}
+
+        {tab === 'range-days' && (
+          <RangeDaysTab />
         )}
       </main>
     </div>
