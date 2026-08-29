@@ -815,8 +815,10 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
     return !!t && t.caliber === weapon.caliber && b.inBag > 0
   })
 
-  // Selectable ammo types depend on the current stage (matching bag in Load, gun in Shoot)
-  const selectOptions = stage === 'shoot' ? loaded.filter(g => g.rounds > 0) : availableMatch
+  // In the Shoot stage the active type must stay stable even after its loaded count
+  // hits zero, otherwise the Fired stat (keyed to the active type) would reset. Use
+  // the full loaded set, not just the non-empty entries.
+  const selectOptions = stage === 'shoot' ? loaded : availableMatch
   const selectedValid = selectOptions.some(o => o.ammoTypeId === ammoTypeId)
   const activeTypeId = selectedValid ? ammoTypeId : (selectOptions[0]?.ammoTypeId ?? 0)
 
@@ -1041,7 +1043,7 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
     const data = await res.json()
     setBag(data.bag ?? [])
     setGunLoaded(data.gunLoaded ?? [])
-    if (action === 'shoot') setStrings(prev => [...prev, data.string])
+    if (action === 'shoot' && data.string) setStrings(prev => [...prev, data.string])
     if (action === 'return') setStrings(prev => [...prev, ...(data.strings ?? [])])
     return null
   }
