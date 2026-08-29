@@ -795,7 +795,12 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   // Keep a sensible default selection as the bag / gun changes for the current stage
   useEffect(() => {
     if (stage === 'load') {
-      if (bag[0] && !bag.some(b => b.ammoTypeId === ammoTypeId)) setAmmoTypeId(bag[0].ammoTypeId)
+      const match = bag.find(b => {
+        const t = typeForId(b.ammoTypeId)
+        return !!t && t.caliber === weapon.caliber && b.inBag > 0
+      })
+      if (match && ammoTypeId !== match.ammoTypeId) setAmmoTypeId(match.ammoTypeId)
+      else if (!bag.some(b => b.ammoTypeId === ammoTypeId) && bag[0]) setAmmoTypeId(bag[0].ammoTypeId)
     } else if (stage === 'shoot') {
       if (loaded.length && !loaded.some(g => g.ammoTypeId === ammoTypeId)) setAmmoTypeId(loaded[0].ammoTypeId)
     }
@@ -809,10 +814,17 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   const selectOptions = stage === 'shoot' ? loaded.filter(g => g.rounds > 0) : bag
   const selectedValid = selectOptions.some(o => o.ammoTypeId === ammoTypeId)
   const activeTypeId = selectedValid ? ammoTypeId : (selectOptions[0]?.ammoTypeId ?? 0)
-  const ammo = typeForId(activeTypeId)
+  // In the Load stage, auto-pick the first in-stock ammo whose caliber matches the
+  // weapon so the user never has to choose. Falls back to the manual select otherwise.
+  const availableMatch = bag.filter(b => {
+    const t = typeForId(b.ammoTypeId)
+    return !!t && t.caliber === weapon.caliber && b.inBag > 0
+  })
+  const loadTypeId = availableMatch.length > 0 ? availableMatch[0].ammoTypeId : activeTypeId
+  const ammo = typeForId(stage === 'load' ? loadTypeId : activeTypeId)
   const mismatch = !!ammo && weapon.caliber !== ammo.caliber
 
-  const inBag = bag.find(b => b.ammoTypeId === activeTypeId)?.inBag ?? 0
+  const inBag = bag.find(b => b.ammoTypeId === loadTypeId)?.inBag ?? 0
   const loadedForAmmo = loaded.find(g => g.ammoTypeId === activeTypeId)?.rounds ?? 0
   const firedForAmmo = strings
     .filter(s => s.weaponId === weapon.id && s.ammoTypeId === activeTypeId)
@@ -828,8 +840,9 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
 
   const act = async (action: 'load' | 'shoot' | 'return', useAll = false) => {
     setError('')
+    const id = stage === 'load' ? loadTypeId : activeTypeId
     const amount = useAll ? (action === 'load' ? inBag : loadedForAmmo) : rounds
-    if (!activeTypeId) { setError('Select an ammo type'); return }
+    if (!id) { setError('Select an ammo type'); return }
     if (action === 'load') {
       if (inBag === 0) { setError('No ammo of this type in the bag'); return }
       if (amount <= 0) { setError('Enter a positive round count'); return }
@@ -839,7 +852,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
       if (amount <= 0) { setError('Enter a positive round count'); return }
       if (amount > loadedForAmmo) { setError(`Only ${loadedForAmmo} loaded`); return }
     }
-    const err = await onAction(action, weapon.id, activeTypeId, amount, note)
+    const err = await onAction(action, weapon.id, id, amount, note)
     if (err) { setError(err); return }
     setRounds(0)
     setNote('')
@@ -908,14 +921,20 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
       <div className="mt-3 space-y-3">
         {stage === 'load' && (
           <>
-            <select value={ammoTypeId} onChange={e => { setAmmoTypeId(Number(e.target.value)); setRounds(0) }}
-              className="px-3 py-2 border rounded-lg text-sm w-full">
-              {bag.length === 0 && <option value={0}>No ammo in bag</option>}
-              {bag.map(b => {
-                const t = typeForId(b.ammoTypeId)
-                return <option key={b.ammoTypeId} value={b.ammoTypeId}>{t?.name ?? `Type #${b.ammoTypeId}`} ({b.inBag})</option>
-              })}
-            </select>
+            {availableMatch.length > 0 ? (
+              <p className="text-sm text-neutral-600">
+                Ammo: <span className="font-medium">{ammo?.name ?? `Type #${loadTypeId}`}</span>
+              </p>
+            ) : (
+              <select value={ammoTypeId} onChange={e => { setAmmoTypeId(Number(e.target.value)); setRounds(0) }}
+                className="px-3 py-2 border rounded-lg text-sm w-full">
+                {bag.length === 0 && <option value={0}>No ammo in bag</option>}
+                {bag.map(b => {
+                  const t = typeForId(b.ammoTypeId)
+                  return <option key={b.ammoTypeId} value={b.ammoTypeId}>{t?.name ?? `Type #${b.ammoTypeId}`} ({b.inBag})</option>
+                })}
+              </select>
+            )}
 
             {mismatch && (
               <p className="text-amber-600 text-xs">
