@@ -560,7 +560,7 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
           {([1, 2] as const).map(n => (
             <div key={n} className="flex items-center gap-3">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${step === n ? 'bg-black text-white' : 'bg-neutral-200 text-neutral-500'}`}>{n}</div>
-              <span className={`text-sm ${step === n ? 'font-medium text-neutral-900' : 'text-neutral-400'}`}>{n === 1 ? 'Weapons' : 'Ammo'}</span>
+              <span className={`text-sm ${step === n ? 'font-medium text-neutral-900' : 'text-neutral-400'}`}>{n === 1 ? 'Choose your weapons' : 'Choose your ammo'}</span>
               {n === 1 && <div className="w-8 h-px bg-neutral-200" />}
             </div>
           ))}
