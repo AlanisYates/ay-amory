@@ -787,10 +787,9 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   const [rounds, setRounds] = useState(0)
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
-  const [stage, setStage] = useState<'load' | 'shoot' | 'stopped'>(
+  const [stage, setStage] = useState<'load' | 'shoot'>(
     gunLoaded.some(g => g.weaponId === weapon.id && g.rounds > 0) ? 'shoot' : 'load'
   )
-  const [showStopModal, setShowStopModal] = useState(false)
 
   // Keep a sensible default selection as the bag / gun changes for the current stage
   useEffect(() => {
@@ -800,7 +799,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
           const t = typeForId(b.ammoTypeId)
           return !!t && t.caliber === weapon.caliber && b.inBag > 0
         })
-        setAmmoTypeId(matches.length > 0 ? matches[0].ammoTypeId : (bag[0]?.ammoTypeId ?? 0))
+        setAmmoTypeId(matches.length > 0 ? matches[0].ammoTypeId : 0)
       }
     } else if (stage === 'shoot') {
       if (loaded.length && !loaded.some(g => g.ammoTypeId === ammoTypeId)) setAmmoTypeId(loaded[0].ammoTypeId)
@@ -808,8 +807,6 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   }, [bag, gunLoaded, ammoTypeId, stage])
 
   const loaded = gunLoaded.filter(g => g.weaponId === weapon.id)
-  const totalLoaded = loaded.reduce((s, g) => s + g.rounds, 0)
-  const fired = strings.filter(s => s.weaponId === weapon.id).reduce((s, x) => s + x.rounds, 0)
 
   // In the Load stage, only ever offer caliber-matching, in-stock ammo — never
   // mismatched calibers, even when nothing matches.
@@ -864,22 +861,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
     if (action === 'load') setStage('shoot')
   }
 
-  const handleStop = () => {
-    if (totalLoaded > 0) setShowStopModal(true)
-    else setStage('stopped')
-  }
-
-  const handleStopReturn = async () => {
-    let err: string | null = null
-    for (const g of loaded) {
-      if (g.rounds <= 0) continue
-      const e = await onAction('return', weapon.id, g.ammoTypeId, g.rounds, '')
-      if (e) { err = e; break }
-    }
-    setShowStopModal(false)
-    if (!err) setStage('stopped')
-    else setError(err)
-  }
+  const endRound = () => setStage('load')
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-4">
@@ -939,59 +921,40 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
 
         {stage === 'shoot' && (
           <>
-            <p className="text-sm text-neutral-600">
-              Loaded: <span className="font-semibold">{loadedForAmmo}</span> × {ammo?.name ?? `Type #${activeTypeId}`}
-            </p>
-
-            {loaded.filter(g => g.rounds > 0).length > 1 && (
+            {selectOptions.length === 1 ? (
+              <p className="text-sm text-neutral-600">
+                Ammo: <span className="font-medium">{ammo?.name ?? `Type #${activeTypeId}`}</span>
+              </p>
+            ) : selectOptions.length > 1 ? (
               <select value={ammoTypeId} onChange={e => { setAmmoTypeId(Number(e.target.value)); setRounds(0) }}
                 className="px-3 py-2 border rounded-lg text-sm w-full">
-                {loaded.filter(g => g.rounds > 0).map(g => {
+                {selectOptions.map(g => {
                   const t = typeForId(g.ammoTypeId)
                   return <option key={g.ammoTypeId} value={g.ammoTypeId}>{t?.name ?? `Type #${g.ammoTypeId}`} ({g.rounds})</option>
                 })}
               </select>
+            ) : (
+              <p className="text-sm text-neutral-500">Nothing loaded.</p>
             )}
 
-            <QuickAdd rounds={rounds} cap={cap} onChange={setRoundsClamped} onStep={step} />
+            <QuickAdd rounds={rounds} cap={cap} onChange={setRoundsClamped} onStep={step}
+              onMax={loadedForAmmo > 0 ? () => setRoundsClamped(loadedForAmmo) : undefined} />
 
             <input type="text" placeholder="Note (optional)" value={note}
               onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm w-full" />
 
             {error && <p className="text-red-500 text-xs">{error}</p>}
 
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex gap-2">
               <button type="button" onClick={() => act('shoot')}
                 disabled={rounds === 0 || loadedForAmmo === 0}
-                className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Shoot</button>
-              <button type="button" onClick={() => act('shoot', true)}
-                disabled={loadedForAmmo === 0}
-                className="px-3 py-2 border border-red-300 text-red-700 rounded-lg text-sm hover:bg-red-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Shoot All</button>
-              <button type="button" onClick={handleStop}
-                className="ml-auto px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">End Round</button>
+                className="flex-1 px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Shoot</button>
+              <button type="button" onClick={endRound}
+                className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">End Round</button>
             </div>
           </>
         )}
-
-        {stage === 'stopped' && (
-          <div className="space-y-2 opacity-70">
-            <p className="text-sm text-neutral-500">
-              Out of ammo · fired <span className="font-semibold text-neutral-700">{fired}</span> rounds
-            </p>
-            <button type="button" onClick={() => setStage('load')}
-              className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Resume</button>
-          </div>
-        )}
       </div>
-
-      {showStopModal && (
-        <ConfirmStopModal
-          weaponName={weapon.name}
-          remaining={totalLoaded}
-          onReload={() => setShowStopModal(false)}
-          onReturn={handleStopReturn}
-        />
-      )}
     </div>
   )
 }
@@ -1025,30 +988,6 @@ function QuickAdd({ rounds, cap, onChange, onStep, onMax }: {
           className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+</button>
       </div>
       {rounds === 0 && <p className="text-xs text-neutral-400 mt-1">No rounds selected</p>}
-    </div>
-  )
-}
-
-function ConfirmStopModal({ weaponName, remaining, onReload, onReturn }: {
-  weaponName: string
-  remaining: number
-  onReload: () => void
-  onReturn: () => void
-}) {
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-        <h3 className="text-lg font-semibold mb-1">End round for {weaponName}?</h3>
-        <p className="text-sm text-neutral-600 mb-4">
-          {remaining} round{remaining === 1 ? '' : 's'} still loaded. Return them to the bag, or keep shooting?
-        </p>
-        <div className="flex gap-3 mt-2">
-          <button type="button" onClick={onReload}
-            className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Keep Shooting</button>
-          <button type="button" onClick={onReturn}
-            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer">Return to Bag</button>
-        </div>
-      </div>
     </div>
   )
 }
