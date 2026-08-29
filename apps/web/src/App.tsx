@@ -455,111 +455,181 @@ function NewTypeForm({ onSuccess, onClose }: { onSuccess: () => void; onClose: (
 
 type AmmoRow = { ammoTypeId: number; quantity: number }
 
-function RangeDayStartForm({ ammoTypes, weapons, inventory, onSuccess, onClose }: {
-  ammoTypes: AmmoType[]; weapons: Weapon[]; inventory: InventoryItem[]; onSuccess: (session: RangeDaySession) => void; onClose: () => void
+function RangeDayStartWizard({ onComplete, onCancel }: {
+  onComplete: (session: RangeDaySession) => void
+  onCancel: () => void
 }) {
+  const [step, setStep] = useState<1 | 2>(1)
   const [note, setNote] = useState('')
   const [selectedWeapons, setSelectedWeapons] = useState<number[]>([])
+  const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
+  const [weapons, setWeapons] = useState<Weapon[]>([])
+  const [inventory, setInventory] = useState<InventoryItem[]>([])
+  const [rows, setRows] = useState<AmmoRow[]>([{ ammoTypeId: 0, quantity: 0 }])
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      apiFetch('/ammo/types'),
+      apiFetch('/weapons'),
+      apiFetch('/ammo/inventory'),
+    ]).then(async ([t, w, i]) => {
+      if (cancelled) return
+      const types: AmmoType[] = t.ok ? await t.json() : []
+      const wps: Weapon[] = w.ok ? await w.json() : []
+      const inv: InventoryItem[] = i.ok ? await i.json() : []
+      setAmmoTypes(types); setWeapons(wps); setInventory(inv)
+      const stocked = types.filter(x => (inv.find(y => y.id === x.id)?.balance ?? 0) > 0)
+      setRows([{ ammoTypeId: stocked[0]?.id ?? 0, quantity: 0 }])
+      setLoading(false)
+    }).catch(() => setLoading(false))
+    return () => { cancelled = true }
+  }, [])
 
   const balanceByType = new Map(inventory.map(i => [i.id, i.balance]))
   const availableFor = (ammoTypeId: number) => balanceByType.get(ammoTypeId) ?? 0
-  // Only offer ammo types that actually have rounds in storage
   const stockedTypes = ammoTypes.filter(t => availableFor(t.id) > 0)
-  const [rows, setRows] = useState<AmmoRow[]>([{ ammoTypeId: stockedTypes[0]?.id ?? 0, quantity: 0 }])
-
-  const updateRow = (i: number, field: keyof AmmoRow, val: number) => {
-    setRows(r => r.map((row, idx) => idx === i ? { ...row, [field]: val } : row))
-  }
 
   const toggleWeapon = (id: number) => {
     setSelectedWeapons(prev => prev.includes(id) ? prev.filter(w => w !== id) : [...prev, id])
   }
+  const updateRow = (i: number, field: keyof AmmoRow, val: number) => {
+    setRows(r => r.map((row, idx) => idx === i ? { ...row, [field]: val } : row))
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (step === 1) { setStep(2); return }
     setError('')
     const ammo = rows.filter(r => r.quantity > 0)
     if (ammo.length === 0) { setError('Add at least one ammo type with quantity > 0'); return }
     const overLimit = ammo.some(r => r.quantity > availableFor(r.ammoTypeId))
     if (overLimit) { setError('One or more calibers exceed what you have in storage'); return }
+    setSubmitting(true)
     const res = await apiFetch('/ammo/range-days', {
       method: 'POST',
       body: JSON.stringify({ note: note || null, ammo, weapons: selectedWeapons }),
     })
+    setSubmitting(false)
     if (!res.ok) { const d = await res.json(); setError(d.error || 'Error'); return }
     const session = await res.json()
-    onSuccess(session)
+    onComplete(session)
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4">
-      <input type="text" placeholder="Note (e.g. Burro Canyon)" value={note}
-        onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
+    <div className="min-h-screen bg-neutral-50">
+      <header className="border-b border-neutral-200 bg-white sticky top-0 z-10">
+        <div className="mx-auto max-w-3xl flex items-center justify-between px-6 h-16">
+          <button onClick={onCancel} className="text-neutral-400 hover:text-neutral-700 cursor-pointer">← Cancel</button>
+          <h1 className="text-lg font-bold tracking-tight">Start Range Day</h1>
+          <div className="w-16" />
+        </div>
+      </header>
 
-      <div>
-        <p className="text-sm font-medium text-neutral-700 mb-2">Ammo to take</p>
-        {rows.map((row, i) => {
-          const avail = availableFor(row.ammoTypeId)
-          const over = row.quantity > avail
-          return (
-            <div key={i} className="mb-2">
-              <div className="flex gap-2 items-center">
-                  <select value={row.ammoTypeId} onChange={e => updateRow(i, 'ammoTypeId', Number(e.target.value))}
-                  className="flex-1 px-3 py-2 border rounded-lg text-sm">
-                  {stockedTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-                <input type="number" min="1" placeholder="Qty" value={row.quantity || ''}
-                  onChange={e => updateRow(i, 'quantity', Number(e.target.value))}
-                  className={`w-24 px-3 py-2 border rounded-lg text-sm ${over ? 'border-red-400' : ''}`} />
-                {rows.length > 1 && (
-                  <button type="button" onClick={() => setRows(r => r.filter((_, idx) => idx !== i))}
-                    className="text-neutral-400 hover:text-red-500 cursor-pointer text-lg leading-none">&times;</button>
-                )}
-              </div>
-              <p className={`text-xs mt-1 ${over ? 'text-red-500' : 'text-neutral-400'}`}>
-                {over
-                  ? `Only ${avail.toLocaleString()} in storage`
-                  : `In storage: ${avail.toLocaleString()}`}
-              </p>
+      <main className="mx-auto max-w-3xl px-6 py-8">
+        {/* Stepper */}
+        <div className="flex items-center gap-3 mb-6">
+          {([1, 2] as const).map(n => (
+            <div key={n} className="flex items-center gap-3">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${step === n ? 'bg-black text-white' : 'bg-neutral-200 text-neutral-500'}`}>{n}</div>
+              <span className={`text-sm ${step === n ? 'font-medium text-neutral-900' : 'text-neutral-400'}`}>{n === 1 ? 'Weapons' : 'Ammo'}</span>
+              {n === 1 && <div className="w-8 h-px bg-neutral-200" />}
             </div>
-          )
-        })}
-        <button type="button" onClick={() => setRows(r => [...r, { ammoTypeId: stockedTypes[0]?.id ?? 0, quantity: 0 }])}
-          className="text-sm text-neutral-500 hover:text-neutral-700 cursor-pointer text-left">
-          + Add Another Caliber
-        </button>
-        {stockedTypes.length === 0 && (
-          <p className="text-xs text-neutral-400 mt-2">No rounds in storage — add inventory on the Ammo tab first.</p>
-        )}
-      </div>
+          ))}
+        </div>
 
-      <div>
-        <p className="text-sm font-medium text-neutral-700 mb-2">Weapons (optional)</p>
-        {weapons.length === 0 ? (
-          <p className="text-xs text-neutral-400">No weapons yet — you can add them later on the Weapons tab.</p>
+        {loading ? (
+          <p className="text-neutral-500 text-sm">Loading…</p>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {weapons.map(w => (
-              <label key={w.id}
-                className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm cursor-pointer transition-colors ${
-                  selectedWeapons.includes(w.id) ? 'border-black bg-neutral-50' : 'border-neutral-200'
-                }`}>
-                <input type="checkbox" checked={selectedWeapons.includes(w.id)}
-                  onChange={() => toggleWeapon(w.id)} className="accent-black" />
-                <span className="font-medium">{w.name}</span>
-                <span className="text-xs text-neutral-400">{w.caliber}</span>
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
+          <form onSubmit={submit} className="flex flex-col gap-6">
+            {step === 1 && (
+              <div>
+                <p className="text-sm text-neutral-500 mb-3">Pick the weapons you're bringing. You can change this later on the Weapons tab.</p>
+                {weapons.length === 0 ? (
+                  <p className="text-sm text-neutral-400">No weapons yet — you can skip this and add them later.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {weapons.map(w => (
+                      <label key={w.id}
+                        className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm cursor-pointer transition-colors ${
+                          selectedWeapons.includes(w.id) ? 'border-black bg-neutral-50' : 'border-neutral-200'
+                        }`}>
+                        <input type="checkbox" checked={selectedWeapons.includes(w.id)}
+                          onChange={() => toggleWeapon(w.id)} className="accent-black" />
+                        <span className="font-medium">{w.name}</span>
+                        <span className="text-xs text-neutral-400">{w.caliber}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <button type="button" onClick={() => setStep(2)}
+                  className="mt-6 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">
+                  Continue to Ammo →
+                </button>
+              </div>
+            )}
 
-      {error && <p className="text-red-500 text-sm">{error}</p>}
-      <button type="submit" className="px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">
-        Start Range Day
-      </button>
-    </form>
+            {step === 2 && (
+              <div className="flex flex-col gap-4">
+                <input type="text" placeholder="Note (e.g. Burro Canyon)" value={note}
+                  onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
+
+                <div>
+                  <p className="text-sm font-medium text-neutral-700 mb-2">Ammo to take</p>
+                  {rows.map((row, i) => {
+                    const avail = availableFor(row.ammoTypeId)
+                    const over = row.quantity > avail
+                    return (
+                      <div key={i} className="mb-2">
+                        <div className="flex gap-2 items-center">
+                          <select value={row.ammoTypeId} onChange={e => updateRow(i, 'ammoTypeId', Number(e.target.value))}
+                            className="flex-1 px-3 py-2 border rounded-lg text-sm">
+                            {stockedTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                          <input type="number" min="1" placeholder="Qty" value={row.quantity || ''}
+                            onChange={e => updateRow(i, 'quantity', Number(e.target.value))}
+                            className={`w-24 px-3 py-2 border rounded-lg text-sm ${over ? 'border-red-400' : ''}`} />
+                          {rows.length > 1 && (
+                            <button type="button" onClick={() => setRows(r => r.filter((_, idx) => idx !== i))}
+                              className="text-neutral-400 hover:text-red-500 cursor-pointer text-lg leading-none">&times;</button>
+                          )}
+                        </div>
+                        <p className={`text-xs mt-1 ${over ? 'text-red-500' : 'text-neutral-400'}`}>
+                          {over
+                            ? `Only ${avail.toLocaleString()} in storage`
+                            : `In storage: ${avail.toLocaleString()}`}
+                        </p>
+                      </div>
+                    )
+                  })}
+                  <button type="button" onClick={() => setRows(r => [...r, { ammoTypeId: stockedTypes[0]?.id ?? 0, quantity: 0 }])}
+                    className="text-sm text-neutral-500 hover:text-neutral-700 cursor-pointer text-left">
+                    + Add Another Caliber
+                  </button>
+                  {stockedTypes.length === 0 && (
+                    <p className="text-xs text-neutral-400 mt-2">No rounds in storage — add inventory on the Ammo tab first.</p>
+                  )}
+                </div>
+
+                {error && <p className="text-red-500 text-sm">{error}</p>}
+
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setStep(1)}
+                    className="px-4 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">← Back</button>
+                  <button type="submit" disabled={submitting}
+                    className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer disabled:opacity-40">
+                    Start Range Day
+                  </button>
+                </div>
+              </div>
+            )}
+          </form>
+        )}
+      </main>
+    </div>
   )
 }
 
@@ -1751,14 +1821,15 @@ function WeaponFiringHistoryView({ history, fmtDate, fmtTime }: {
 
 // ── Dashboard View ────────────────────────────────────────────────────────
 
-type QuickAction = 'acquire' | 'expend' | 'range-day' | 'adjust' | 'new-type' | null
+type QuickAction = 'acquire' | 'expend' | 'adjust' | 'new-type' | null
 
-function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResumeRangeDay }: {
+function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResumeRangeDay, onStartRangeDay }: {
   user: User
   onLogout: () => void
   onRangeDayStart: (session: RangeDaySession) => void
   activeSession: RangeDaySession | null
   onResumeRangeDay: () => void
+  onStartRangeDay: () => void
 }) {
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
@@ -1861,10 +1932,8 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
             </button>
           ) : (
             <button
-              onClick={() => setActiveAction(activeAction === 'range-day' ? null : 'range-day')}
-              className={`px-6 py-3 rounded-xl text-base font-semibold shadow-sm transition-colors cursor-pointer ${
-                activeAction === 'range-day' ? 'bg-green-700 text-white' : 'bg-green-600 text-white hover:bg-green-700'
-              }`}>
+              onClick={onStartRangeDay}
+              className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm bg-green-600 text-white hover:bg-green-700 transition-colors cursor-pointer">
               ⇄ Start Range Day
             </button>
           )}
@@ -1887,16 +1956,6 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
           </QuickForm>
         )}
         {activeAction === 'expend' && ammoTypes.length === 0 && (
-          <div className="rounded-xl border border-neutral-200 bg-white p-5 mt-4">
-            <p className="text-sm text-neutral-500">Create an ammo type first.</p>
-          </div>
-        )}
-        {activeAction === 'range-day' && ammoTypes.length > 0 && (
-          <QuickForm title="Start Range Day" onClose={() => setActiveAction(null)}>
-            <RangeDayStartForm ammoTypes={ammoTypes} weapons={weapons} inventory={inventory} onSuccess={handleRangeDayStart} onClose={() => setActiveAction(null)} />
-          </QuickForm>
-        )}
-        {activeAction === 'range-day' && ammoTypes.length === 0 && (
           <div className="rounded-xl border border-neutral-200 bg-white p-5 mt-4">
             <p className="text-sm text-neutral-500">Create an ammo type first.</p>
           </div>
@@ -2015,7 +2074,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeSession, setActiveSession] = useState<RangeDaySession | null>(null)
-  const [page, setPage] = useState<'dashboard' | 'range-day'>('dashboard')
+  const [page, setPage] = useState<'dashboard' | 'range-day' | 'range-day-start'>('dashboard')
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
 
   // On mount, restore session from localStorage
@@ -2091,6 +2150,15 @@ function App() {
     )
   }
 
+  if (page === 'range-day-start') {
+    return (
+      <RangeDayStartWizard
+        onComplete={handleRangeDayStart}
+        onCancel={() => setPage('dashboard')}
+      />
+    )
+  }
+
   return (
     <DashboardView
       user={user}
@@ -2098,6 +2166,7 @@ function App() {
       onRangeDayStart={handleRangeDayStart}
       activeSession={activeSession}
       onResumeRangeDay={() => setPage('range-day')}
+      onStartRangeDay={() => setPage('range-day-start')}
     />
   )
 }
