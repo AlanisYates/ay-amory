@@ -647,16 +647,17 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
                             }`}>
                             <div>
                               <p className="font-semibold text-neutral-900">{t.name}</p>
-                              <p className={`text-xs mt-0.5 ${over ? 'text-red-500' : 'text-neutral-400'}`}>
-                                {t.caliber} · {avail.toLocaleString()} in storage
-                              </p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${over ? 'bg-red-100 text-red-700' : 'bg-neutral-100 text-neutral-500'}`}>{t.caliber}</span>
+                                <span className={`text-xs ${over ? 'text-red-500' : 'text-neutral-400'}`}>{avail.toLocaleString()} in storage</span>
+                              </div>
                             </div>
                             {inCart ? (
                               <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
                                 <QuickAdd rounds={qty} cap={avail}
                                   onChange={(n) => setAmmoQty(t.id, n)}
                                   onStep={(d) => stepAmmo(t.id, d)}
-                                  steps={[50]} step={50} />
+                                  steps={[50]} step={50} inline />
                                 <button type="button" onClick={() => toggleAmmo(t.id)} title="Remove"
                                   className="w-9 h-9 rounded-lg border border-neutral-200 text-neutral-400 hover:text-red-500 hover:border-red-200 cursor-pointer">×</button>
                               </div>
@@ -1087,7 +1088,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   )
 }
 
-function QuickAdd({ rounds, cap, onChange, onStep, onMax, steps = [5, 10, 30], step = 1 }: {
+function QuickAdd({ rounds, cap, onChange, onStep, onMax, steps = [5, 10, 30], step = 1, inline = false }: {
   rounds: number
   cap: number
   onChange: (n: number) => void
@@ -1095,7 +1096,26 @@ function QuickAdd({ rounds, cap, onChange, onStep, onMax, steps = [5, 10, 30], s
   onMax?: () => void
   steps?: number[]
   step?: number
+  inline?: boolean
 }) {
+  const chip = "px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+  if (inline) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {steps.map(n => (
+          <button type="button" key={n} onClick={() => onChange(rounds + n)} disabled={rounds + n > cap} className={chip}>+{n}</button>
+        ))}
+        <button type="button" onClick={() => onStep(-step)} disabled={rounds <= 0} className={chip}>−</button>
+        <input type="number" min="0" value={rounds} inputMode="numeric"
+          onChange={e => onChange(Number(e.target.value))}
+          className="w-16 px-2 py-1.5 border rounded-lg text-sm text-center" />
+        <button type="button" onClick={() => onStep(step)} disabled={rounds >= cap} className={chip}>+</button>
+        {onMax && (
+          <button type="button" onClick={onMax} disabled={cap === 0} className={chip}>All</button>
+        )}
+      </div>
+    )
+  }
   return (
     <div>
       <div className="flex flex-wrap gap-2">
