@@ -1454,14 +1454,18 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
         const t = await res.json()
         ammoTypeId = t.id
       }
-      await apiFetch(`/ammo/range-days/${session.id}/acquire`, {
+      const acqRes = await apiFetch(`/ammo/range-days/${session.id}/acquire`, {
         method: 'POST',
         body: JSON.stringify({
           ammo: [{ ammoTypeId, quantity: r.quantity }],
           note: note || null,
-          ...(r.price ? { price: Number(r.price) } : {}),
+          ...(r.price ? { price: Math.round(Number(r.price) * 100) } : {}),
         }),
       })
+      if (acqRes.ok) {
+        const data = await acqRes.json().catch(() => null)
+        if (data?.bag) setBag(data.bag)
+      }
     }
     const res = await apiFetch(`/ammo/range-days/${session.id}`)
     if (res.ok) {
