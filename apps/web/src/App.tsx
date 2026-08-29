@@ -1893,20 +1893,6 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
           Welcome{user.firstName ? `, ${user.firstName}` : ''}
         </h2>
 
-        {/* Active Range Day Banner */}
-        {activeSession && (
-          <button
-            onClick={onResumeRangeDay}
-            className="w-full mb-6 flex items-center justify-between px-5 py-3 rounded-xl bg-green-50 border border-green-200 text-green-800 hover:bg-green-100 transition-colors cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-semibold">Range Day Active</span>
-              {activeSession.note && <span className="text-sm text-green-700">· {activeSession.note}</span>}
-            </div>
-            <span className="text-sm font-medium">Return to Range Day →</span>
-          </button>
-        )}
-
         {/* Quick Action Buttons */}
         <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
           <div className="flex flex-wrap gap-2">
@@ -1928,13 +1914,21 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
             ))}
           </div>
 
-          <button
-            onClick={() => setActiveAction(activeAction === 'range-day' ? null : 'range-day')}
-            className={`px-6 py-3 rounded-xl text-base font-semibold shadow-sm transition-colors cursor-pointer ${
-              activeAction === 'range-day' ? 'bg-green-700 text-white' : 'bg-green-600 text-white hover:bg-green-700'
-            }`}>
-            ⇄ Start Range Day
-          </button>
+          {activeSession ? (
+            <button
+              onClick={onResumeRangeDay}
+              className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm bg-green-600 text-white hover:bg-green-700 transition-colors cursor-pointer">
+              ⇄ Resume Range Day
+            </button>
+          ) : (
+            <button
+              onClick={() => setActiveAction(activeAction === 'range-day' ? null : 'range-day')}
+              className={`px-6 py-3 rounded-xl text-base font-semibold shadow-sm transition-colors cursor-pointer ${
+                activeAction === 'range-day' ? 'bg-green-700 text-white' : 'bg-green-600 text-white hover:bg-green-700'
+              }`}>
+              ⇄ Start Range Day
+            </button>
+          )}
         </div>
 
         {/* Quick Action Forms */}
