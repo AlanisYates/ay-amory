@@ -987,7 +987,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
 
             {error && <p className="text-red-500 text-xs">{error}</p>}
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button type="button" onClick={() => act('shoot')}
                 disabled={rounds === 0 || loadedForAmmo === 0}
                 className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Shoot</button>
@@ -998,7 +998,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
                 className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Load More</button>
               <button type="button" onClick={handleStop}
                 disabled={totalLoaded === 0}
-                className="px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Stop</button>
+                className="ml-auto text-xs text-neutral-400 hover:text-red-500 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">Stop</button>
             </div>
           </>
         )}
