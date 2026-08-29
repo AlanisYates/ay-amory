@@ -1143,10 +1143,6 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
     onSessionEnd()
   }
 
-  const bagTotal = bag.reduce((s, b) => s + b.inBag, 0)
-  const loadedTotal = gunLoaded.reduce((s, g) => s + g.rounds, 0)
-  const firedTotal = strings.reduce((s, x) => s + x.rounds, 0)
-
   return (
     <div className="min-h-screen bg-neutral-50">
       {showEndModal && (
@@ -1169,31 +1165,6 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
       </header>
 
       <main className="mx-auto max-w-4xl px-6 py-8 space-y-8">
-        {/* Session summary */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4">
-            <span className="text-3xl" aria-hidden>🎒</span>
-            <div>
-              <p className="text-xs text-neutral-500 uppercase tracking-wide">In Bag</p>
-              <p className="text-xl font-bold text-neutral-900">{bagTotal.toLocaleString()}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4">
-            <span className="text-3xl" aria-hidden>🔫</span>
-            <div>
-              <p className="text-xs text-neutral-500 uppercase tracking-wide">Loaded</p>
-              <p className="text-xl font-bold text-blue-600">{loadedTotal.toLocaleString()}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4">
-            <span className="text-3xl" aria-hidden>💥</span>
-            <div>
-              <p className="text-xs text-neutral-500 uppercase tracking-wide">Fired</p>
-              <p className="text-xl font-bold text-red-600">{firedTotal.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-
         {/* Per-weapon Load / Shoot / Return */}
         <section>
           <h2 className="text-lg font-semibold mb-3">Weapons</h2>
