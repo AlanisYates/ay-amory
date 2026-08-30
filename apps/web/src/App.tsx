@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 
 const TOKEN_KEY = 'ay-armory-token'
 const API_BASE = ''
@@ -2781,6 +2781,100 @@ function RangeDaysTab() {
   )
 }
 
+function ExportImportTab({ onImported }: { onImported?: () => void }) {
+  const [preview, setPreview] = useState<any>(null)
+  const [mode, setMode] = useState<'merge' | 'replace'>('merge')
+  const [status, setStatus] = useState<string>('')
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const handleExport = async () => {
+    setStatus('')
+    const res = await apiFetch('/export')
+    if (!res.ok) { const d = await res.json().catch(() => ({ error: 'Failed' })); setStatus(d.error || 'Export failed'); return }
+    const data = await res.json()
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `ay-armory-backup-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    setStatus(`Exported ${data.weapons?.length ?? 0} weapons, ${data.ammoTypes?.length ?? 0} ammo types, ${data.weaponCleanings?.length ?? 0} cleanings, ${data.ammoTransactions?.length ?? 0} transactions`)
+  }
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      const json = JSON.parse(text)
+      if (!json.version) throw new Error('Invalid backup: missing version')
+      setPreview(json)
+      setStatus('')
+    } catch (err: any) {
+      setStatus(err.message || 'Invalid JSON')
+      setPreview(null)
+    }
+  }
+
+  const handleImport = async () => {
+    if (!preview) return
+    setBusy(true)
+    setStatus('')
+    const res = await apiFetch('/import', {
+      method: 'POST',
+      body: JSON.stringify({ ...preview, mode }),
+    })
+    const d = await res.json().catch(() => ({}))
+    setBusy(false)
+    if (!res.ok) { setStatus(d.error || 'Import failed'); return }
+    setStatus(`Imported — weapons: ${d.imported?.weapons ?? 0}, ammoTypes: ${d.imported?.ammoTypes ?? 0}, cleanings: ${d.imported?.weaponCleanings ?? 0}, sessions: ${d.imported?.rangeDaySessions ?? 0}, txs: ${d.imported?.transactions ?? 0} (${mode})`)
+    setPreview(null)
+    if (fileRef.current) fileRef.current.value = ''
+    onImported?.()
+  }
+
+  return (
+    <div className="max-w-2xl">
+      <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Backup & Restore</h3>
+      <p className="text-xs text-neutral-400 mt-1">Export a versioned JSON backup to move to a new phone/app, then restore it into another account. Includes weapons, cleanings (history), ammo types, transactions, range days — prices stored as dollars.</p>
+
+      <div className="mt-6 rounded-xl border border-neutral-200 bg-white p-5">
+        <h4 className="text-sm font-semibold">Export</h4>
+        <p className="text-xs text-neutral-500 mt-1">Downloads <span className="font-mono">ay-armory-backup-YYYY-MM-DD.json</span> (version 1, includes cleaning history for export).</p>
+        <button onClick={handleExport} className="mt-3 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">Download Backup JSON</button>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-5">
+        <h4 className="text-sm font-semibold">Restore (Import)</h4>
+        <p className="text-xs text-neutral-500 mt-1">Pick a backup JSON exported from another account. Choose Merge (skip dupes) or Replace (wipe then restore).</p>
+        <div className="flex gap-2 mt-3">
+          <label className={`flex-1 flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer ${mode === 'merge' ? 'bg-black text-white border-black' : 'bg-white border-neutral-200'}`}>
+            <input type="radio" name="mode" checked={mode === 'merge'} onChange={() => setMode('merge')} className="accent-black" />
+            <span className="text-sm">Merge</span>
+          </label>
+          <label className={`flex-1 flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer ${mode === 'replace' ? 'bg-black text-white border-black' : 'bg-white border-neutral-200'}`}>
+            <input type="radio" name="mode" checked={mode === 'replace'} onChange={() => setMode('replace')} className="accent-black" />
+            <span className="text-sm">Replace</span>
+          </label>
+        </div>
+        <input ref={fileRef} type="file" accept=".json,application/json" onChange={onFile} className="mt-3 w-full text-sm" />
+        {preview && (
+          <div className="mt-3 rounded-lg bg-neutral-50 border border-neutral-200 p-3 text-xs">
+            <p className="font-semibold">Preview — v{preview.version} exported {preview.exportedAt ? new Date(preview.exportedAt).toLocaleString() : ''}</p>
+            <p className="text-neutral-500 mt-1">{preview.weapons?.length ?? 0} weapons · {preview.weaponCleanings?.length ?? 0} cleanings · {preview.ammoTypes?.length ?? 0} ammo types · {preview.ammoTransactions?.length ?? 0} transactions · {preview.rangeDaySessions?.length ?? 0} range days</p>
+            <button onClick={handleImport} disabled={busy} className="mt-3 w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-40 cursor-pointer">{busy ? 'Importing…' : `Import as ${mode}`}</button>
+          </div>
+        )}
+        {status && <p className="text-xs mt-3 tabular-nums whitespace-pre-wrap border-t border-neutral-100 pt-3">{status}</p>}
+      </div>
+    </div>
+  )
+}
+
 // ── Dashboard View ────────────────────────────────────────────────────────
 
 type QuickAction = 'acquire' | 'expend' | 'adjust' | 'new-type' | null
@@ -2798,7 +2892,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
   const [weapons, setWeapons] = useState<Weapon[]>([])
   const [inventoryLoading, setInventoryLoading] = useState(true)
   const [activeAction, setActiveAction] = useState<QuickAction>(null)
-  const [tab, setTab] = useState<'inventory' | 'ammo' | 'types' | 'weapons' | 'history' | 'range-days'>('inventory')
+  const [tab, setTab] = useState<'inventory' | 'ammo' | 'types' | 'weapons' | 'history' | 'range-days' | 'backup'>('inventory')
   const [viewingCaliberName, setViewingCaliberName] = useState<string | null>(null)
   const [txRefreshKey, setTxRefreshKey] = useState(0)
   const [weaponTotals, setWeaponTotals] = useState<Record<number, number>>({})
@@ -2965,14 +3059,14 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-neutral-200 mb-6 mt-8 overflow-x-auto">
-          {(['inventory', 'ammo', 'types', 'weapons', 'history', 'range-days'] as const).map(t => (
+          {(['inventory', 'ammo', 'types', 'weapons', 'history', 'range-days', 'backup'] as const).map(t => (
             <button key={t} onClick={() => { setTab(t); setViewingCaliberName(null); setActiveAction(null) }}
               className={`px-4 py-2 text-sm font-medium capitalize cursor-pointer transition-colors whitespace-nowrap ${
                 tab === t
                   ? 'border-b-2 border-black text-black'
                   : 'text-neutral-500 hover:text-neutral-700'
               }`}>
-              {t === 'weapons' ? 'Weapons' : t === 'types' ? 'Manage Types' : t === 'history' ? 'History' : t === 'ammo' ? 'Ammo' : t === 'range-days' ? 'Range Days' : 'Inventory'}
+              {t === 'weapons' ? 'Weapons' : t === 'types' ? 'Manage Types' : t === 'history' ? 'History' : t === 'ammo' ? 'Ammo' : t === 'range-days' ? 'Range Days' : t === 'backup' ? 'Backup' : 'Inventory'}
             </button>
           ))}
         </div>
@@ -3143,6 +3237,10 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
 
         {tab === 'range-days' && (
           <RangeDaysTab />
+        )}
+
+        {tab === 'backup' && (
+          <ExportImportTab onImported={loadInventory} />
         )}
       </main>
     </div>

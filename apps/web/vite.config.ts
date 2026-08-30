@@ -9,6 +9,8 @@ export default defineConfig({
       '/auth': 'http://localhost:3000',
       '/ammo': 'http://localhost:3000',
       '/weapons': 'http://localhost:3000',
+      '/export': 'http://localhost:3000',
+      '/import': 'http://localhost:3000',
     },
   },
 })
