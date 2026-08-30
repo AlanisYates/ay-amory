@@ -45,6 +45,7 @@ type Weapon = {
   id: number; userId: number; name: string; caliber: string
   type: string; serialNumber: string | null; notes: string | null
   cleaningIntervalRounds: number | null; cleaningIntervalDays: number | null
+  initialRounds: number
   createdAt: string; updatedAt: string
 }
 type WeaponCleaning = {
@@ -1958,6 +1959,7 @@ function NewWeaponForm({ onSuccess, onClose }: { onSuccess: () => void; onClose:
   const [type, setType] = useState('handgun')
   const [serialNumber, setSerialNumber] = useState('')
   const [notes, setNotes] = useState('')
+  const [initialRounds, setInitialRounds] = useState('')
   const [error, setError] = useState('')
 
   const submit = async (e: React.FormEvent) => {
@@ -1970,6 +1972,7 @@ function NewWeaponForm({ onSuccess, onClose }: { onSuccess: () => void; onClose:
         name, caliber, type,
         serialNumber: serialNumber || null,
         notes: notes || null,
+        initialRounds: initialRounds ? Math.max(0, Math.floor(Number(initialRounds))) : 0,
       }),
     })
     if (!res.ok) { const d = await res.json(); setError(d.error || 'Error'); return }
@@ -1991,6 +1994,9 @@ function NewWeaponForm({ onSuccess, onClose }: { onSuccess: () => void; onClose:
         onChange={e => setSerialNumber(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
       <input type="text" placeholder="Notes (optional)" value={notes}
         onChange={e => setNotes(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
+      <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="Initial rounds fired before tracking (optional)" value={initialRounds}
+        onChange={e => setInitialRounds(e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, ''))} className="px-3 py-2 border rounded-lg text-sm" />
+      <p className="text-[11px] text-neutral-400 -mt-2">If you already know this gun has e.g. 500 rounds, set it here. It will count toward total and cleaning due.</p>
       {error && <p className="text-red-500 text-sm">{error}</p>}
       <button type="submit" className="px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">Create</button>
     </form>
@@ -2187,7 +2193,7 @@ function WeaponManager({ weapons, onRefresh }: { weapons: Weapon[]; onRefresh: (
 
   const startEdit = (w: Weapon) => {
     setEditingId(w.id)
-    setEditData({ name: w.name, caliber: w.caliber, type: w.type, serialNumber: w.serialNumber, notes: w.notes })
+    setEditData({ name: w.name, caliber: w.caliber, type: w.type, serialNumber: w.serialNumber, notes: w.notes, initialRounds: w.initialRounds })
   }
 
   const saveEdit = async () => {
@@ -2271,6 +2277,9 @@ function WeaponManager({ weapons, onRefresh }: { weapons: Weapon[]; onRefresh: (
                     </select>
                     <input value={editData.serialNumber ?? ''} onChange={e => setEditData(d => ({ ...d, serialNumber: e.target.value || null }))} className="px-2 py-1 border rounded text-sm" placeholder="Serial" />
                     <input value={editData.notes ?? ''} onChange={e => setEditData(d => ({ ...d, notes: e.target.value || null }))} className="px-2 py-1 border rounded text-sm" placeholder="Notes" />
+                    <label className="text-[11px] text-neutral-500 mt-1">Initial rounds (pre-app)
+                      <input type="text" inputMode="numeric" pattern="[0-9]*" value={editData.initialRounds ?? ''} onChange={e => setEditData(d => ({ ...d, initialRounds: e.target.value ? Number(e.target.value.replace(/\D/g, '')) : 0 }))} className="mt-1 px-2 py-1 border rounded text-sm w-full" placeholder="0" />
+                    </label>
                     <div className="flex gap-2 mt-1">
                       <button onClick={saveEdit} className="text-xs px-2 py-1 bg-black text-white rounded cursor-pointer hover:opacity-80">Save</button>
                       <button onClick={() => setEditingId(null)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">Cancel</button>
@@ -2289,6 +2298,11 @@ function WeaponManager({ weapons, onRefresh }: { weapons: Weapon[]; onRefresh: (
                     <div className="mt-4">
                       <p className="text-3xl font-bold text-neutral-900">{total?.toLocaleString() ?? '0'}</p>
                       <p className="text-xs text-neutral-400 mt-1">rounds fired · total</p>
+                      {(w.initialRounds ?? 0) > 0 && (
+                        <p className="text-[11px] text-neutral-500 mt-1">
+                          {w.initialRounds.toLocaleString()} prior + {Math.max(0, (total ?? 0) - w.initialRounds).toLocaleString()} tracked
+                        </p>
+                      )}
                     </div>
 
                     {w.serialNumber && <p className="text-xs text-neutral-500 mt-3">S/N: {w.serialNumber}</p>}
@@ -2396,12 +2410,17 @@ function WeaponFiringHistoryView({ history, fmtDate, fmtTime }: {
 }) {
   const total = history.totalRounds ?? 0
   const sessions: any[] = history.sessions ?? []
+  const initial = history.weapon?.initialRounds ?? 0
+  const tracked = Math.max(0, total - initial)
   return (
     <div>
       <div className="flex items-baseline gap-2 mb-3">
         <span className="text-2xl font-bold">{total.toLocaleString()}</span>
         <span className="text-sm text-neutral-500">rounds fired total</span>
       </div>
+      {initial > 0 && (
+        <p className="text-xs text-neutral-500 mb-3">{initial.toLocaleString()} prior (pre-app) + {tracked.toLocaleString()} tracked</p>
+      )}
 
       {history.byAmmoType?.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-4">
@@ -3011,15 +3030,22 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
               {inventoryLoading ? (
                 <p className="text-neutral-400 text-sm">Loading inventory...</p>
               ) : inventory.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-neutral-300 p-10 text-center">
-                  <p className="text-neutral-500 mb-4">No ammo types yet — add some to get started.</p>
-                  <button
-                    onClick={() => setActiveAction('new-type')}
-                    className="text-sm px-4 py-2 rounded-lg bg-black text-white hover:opacity-80 transition-opacity cursor-pointer"
-                  >
-                    + New Ammo Type
-                  </button>
-                </div>
+                <>
+                  <div className="rounded-xl border border-dashed border-neutral-300 p-10 text-center">
+                    <p className="text-neutral-500 mb-4">No ammo types yet — add some to get started.</p>
+                    <button
+                      onClick={() => setActiveAction(activeAction === 'new-type' ? null : 'new-type')}
+                      className={`text-sm px-4 py-2 rounded-lg transition-opacity cursor-pointer ${activeAction === 'new-type' ? 'bg-neutral-600 text-white' : 'bg-black text-white hover:opacity-80'}`}
+                    >
+                      {activeAction === 'new-type' ? 'Cancel' : '+ New Ammo Type'}
+                    </button>
+                  </div>
+                  {activeAction === 'new-type' && (
+                    <QuickForm title="New Ammo Type" onClose={() => setActiveAction(null)}>
+                      <NewTypeForm onSuccess={handleActionSuccess} onClose={() => setActiveAction(null)} />
+                    </QuickForm>
+                  )}
+                </>
               ) : (
                 <>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">

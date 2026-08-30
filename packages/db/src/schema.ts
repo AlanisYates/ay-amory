@@ -80,6 +80,7 @@ export const weapons = pgTable('weapons', {
   notes: text('notes'),
   cleaningIntervalRounds: integer('cleaning_interval_rounds'),
   cleaningIntervalDays: integer('cleaning_interval_days'),
+  initialRounds: integer('initial_rounds').default(0).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })

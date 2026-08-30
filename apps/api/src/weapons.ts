@@ -32,13 +32,16 @@ weapons.get('/', async (c) => {
 weapons.post('/', async (c) => {
   const userId = getUserId(c)
   const body = await c.req.json()
-  const { name, caliber, type, serialNumber, notes } = body
+  const { name, caliber, type, serialNumber, notes, initialRounds } = body
 
   if (!name || !caliber || !type) {
     return c.json({ error: 'name, caliber, and type are required' }, 400)
   }
   if (!VALID_WEAPON_TYPES.has(type)) {
     return c.json({ error: `type must be one of: ${[...VALID_WEAPON_TYPES].join(', ')}` }, 400)
+  }
+  if (initialRounds != null && (!Number.isFinite(Number(initialRounds)) || Number(initialRounds) < 0)) {
+    return c.json({ error: 'initialRounds must be a non-negative number' }, 400)
   }
 
   const weapon = await weaponsRepository.createWeapon({
@@ -48,6 +51,7 @@ weapons.post('/', async (c) => {
     type,
     serialNumber: serialNumber ?? null,
     notes: notes ?? null,
+    initialRounds: initialRounds != null ? Math.floor(Number(initialRounds)) : 0,
   })
   return c.json(weapon, 201)
 })
@@ -117,6 +121,10 @@ weapons.patch('/:id', async (c) => {
   const userId = getUserId(c)
   const id = Number(c.req.param('id'))
   const body = await c.req.json()
+  if (body.initialRounds !== undefined && body.initialRounds !== null && (!Number.isFinite(Number(body.initialRounds)) || Number(body.initialRounds) < 0)) {
+    return c.json({ error: 'initialRounds must be a non-negative number' }, 400)
+  }
+  if (body.initialRounds !== undefined && body.initialRounds !== null) body.initialRounds = Math.floor(Number(body.initialRounds))
   const updated = await weaponsRepository.updateWeapon(id, userId, body)
   if (!updated) return c.json({ error: 'Not found' }, 404)
   return c.json(updated)

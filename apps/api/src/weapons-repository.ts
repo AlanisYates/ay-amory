@@ -45,10 +45,11 @@ export type WeaponFiringRow = {
 
 // Pure aggregation of joined range-day-string rows into a weapon firing history.
 // Kept separate from the DB query so it can be unit-tested without a database.
+// initialRounds (weapon.initialRounds) is added to totalRounds so pre-app rounds count.
 export function buildWeaponFiringHistory(weapon: Weapon, rows: WeaponFiringRow[]): WeaponFiringHistory {
   const byAmmoTypeMap = new Map<number, { ammoTypeId: number; name: string; caliber: string; rounds: number }>()
   const sessionMap = new Map<number, WeaponFiringSession>()
-  let totalRounds = 0
+  let totalRounds = (weapon as any).initialRounds ?? 0
 
   for (const r of rows) {
     totalRounds += r.rounds
@@ -101,6 +102,7 @@ export type CreateWeaponData = {
   type: string
   serialNumber?: string | null
   notes?: string | null
+  initialRounds?: number | null
 }
 
 export type UpdateWeaponData = {
@@ -111,6 +113,7 @@ export type UpdateWeaponData = {
   notes?: string | null
   cleaningIntervalRounds?: number | null
   cleaningIntervalDays?: number | null
+  initialRounds?: number | null
 }
 
 export type WeaponCleaning = typeof weaponCleanings.$inferSelect
@@ -125,6 +128,7 @@ export type CreateCleaningData = {
 export const weaponsRepository = {
   async createWeapon(data: CreateWeaponData): Promise<Weapon> {
     const now = new Date()
+    const initialRounds = data.initialRounds != null ? Math.max(0, Math.floor(Number(data.initialRounds))) : 0
     const [weapon] = await db
       .insert(weapons)
       .values({
@@ -134,6 +138,7 @@ export const weaponsRepository = {
         type: data.type,
         serialNumber: data.serialNumber ?? null,
         notes: data.notes ?? null,
+        initialRounds,
         createdAt: now,
         updatedAt: now,
       })
@@ -154,9 +159,14 @@ export const weaponsRepository = {
   },
 
   async updateWeapon(id: number, userId: number, data: UpdateWeaponData): Promise<Weapon | null> {
+    const patch: Record<string, unknown> = { ...data, updatedAt: new Date() }
+    if (data.initialRounds !== undefined) {
+      patch.initialRounds = data.initialRounds == null ? 0 : Math.max(0, Math.floor(Number(data.initialRounds)))
+      if (!Number.isFinite(patch.initialRounds as number)) patch.initialRounds = 0
+    }
     const [updated] = await db
       .update(weapons)
-      .set({ ...data, updatedAt: new Date() })
+      .set(patch as any)
       .where(and(eq(weapons.id, id), eq(weapons.userId, userId)))
       .returning()
     return updated ?? null
@@ -203,7 +213,12 @@ export const weaponsRepository = {
       .innerJoin(rangeDaySessions, eq(rangeDayStrings.sessionId, rangeDaySessions.id))
       .where(eq(rangeDaySessions.userId, userId))
       .groupBy(rangeDayStrings.weaponId)
-    return rows.map(r => ({ weaponId: r.weaponId, totalRounds: Number(r.total) }))
+    const sums = new Map<number, number>(rows.map(r => [r.weaponId, Number(r.total)]))
+    const allWeapons = await db.select({ id: weapons.id, initialRounds: weapons.initialRounds }).from(weapons).where(eq(weapons.userId, userId))
+    return allWeapons.map(w => ({
+      weaponId: w.id,
+      totalRounds: (sums.get(w.id) ?? 0) + (w.initialRounds ?? 0),
+    }))
   },
 
   async listCleanings(weaponId: number, userId: number): Promise<WeaponCleaning[]> {
