@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "start": "node --import tsx/esm src/index.ts",
     "test": "vitest"
   },
   "dependencies": {

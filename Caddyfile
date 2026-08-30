@@ -1,0 +1,32 @@
+{
+	admin off
+}
+
+:80 {
+	root * /srv
+	file_server
+
+	# API reverse proxy
+	handle /auth* {
+		reverse_proxy api:3000
+	}
+	handle /ammo* {
+		reverse_proxy api:3000
+	}
+	handle /weapons* {
+		reverse_proxy api:3000
+	}
+	handle /export* {
+		reverse_proxy api:3000
+	}
+	handle /import* {
+		reverse_proxy api:3000
+	}
+	handle /health* {
+		reverse_proxy api:3000
+	}
+
+	handle {
+		try_files {path} /index.html
+	}
+}
