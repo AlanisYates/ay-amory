@@ -2339,14 +2339,11 @@ function LogCleaningModal({ weapon, totalRounds, onClose, onSaved }: {
   )
 }
 
-function WeaponManager({ weapons, onRefresh }: { weapons: Weapon[]; onRefresh: () => void }) {
+function WeaponManager({ weapons, onRefresh, onWeaponClick }: { weapons: Weapon[]; onRefresh: () => void; onWeaponClick: (weaponId: number) => void }) {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editData, setEditData] = useState<Partial<Weapon>>({})
   const [error, setError] = useState('')
-  const [expandedId, setExpandedId] = useState<number | null>(null)
-  const [history, setHistory] = useState<Record<number, any>>({})
-  const [historyLoading, setHistoryLoading] = useState<Record<number, boolean>>({})
   const [totals, setTotals] = useState<Record<number, number>>({})
   const [totalsLoading, setTotalsLoading] = useState(true)
   const [cleanings, setCleanings] = useState<Record<number, WeaponCleaning[]>>({})
@@ -2420,26 +2417,6 @@ function WeaponManager({ weapons, onRefresh }: { weapons: Weapon[]; onRefresh: (
     onRefresh()
   }
 
-  const toggleExpand = async (w: Weapon) => {
-    if (expandedId === w.id) { setExpandedId(null); return }
-    setExpandedId(w.id)
-    if (!history[w.id]) {
-      setHistoryLoading(h => ({ ...h, [w.id]: true }))
-      try {
-        const res = await apiFetch(`/weapons/${w.id}/history`)
-        if (res.ok) {
-          const data = await res.json()
-          setHistory(h => ({ ...h, [w.id]: data }))
-        }
-      } finally {
-        setHistoryLoading(h => ({ ...h, [w.id]: false }))
-      }
-    }
-  }
-
-  const fmtDate = (d: string | Date) => new Date(d).toLocaleDateString()
-  const fmtTime = (d: string | Date) => new Date(d).toLocaleString()
-
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -2463,9 +2440,7 @@ function WeaponManager({ weapons, onRefresh }: { weapons: Weapon[]; onRefresh: (
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
           {weapons.map(w => {
-            const hist = history[w.id]
             const total = totals[w.id]
-            const loading = historyLoading[w.id]
             return (
               <div key={w.id} className="rounded-xl border border-neutral-200 bg-white shadow-sm p-5 flex flex-col h-full">
                 {editingId === w.id ? (
@@ -2489,13 +2464,16 @@ function WeaponManager({ weapons, onRefresh }: { weapons: Weapon[]; onRefresh: (
                   </div>
                 ) : (
                   <>
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-lg font-bold text-neutral-900">{w.name}</p>
-                        <p className="text-xs text-neutral-400 capitalize mt-0.5">{w.type} · {w.caliber}</p>
+                    <button type="button" onClick={() => onWeaponClick(w.id)}
+                      className="w-full text-left rounded-lg hover:bg-neutral-50 transition-colors cursor-pointer -m-1 p-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-lg font-bold text-neutral-900">{w.name}</p>
+                          <p className="text-xs text-neutral-400 capitalize mt-0.5">{w.type} · {w.caliber}</p>
+                        </div>
+                        <span className="shrink-0 text-xs bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full">{w.caliber}</span>
                       </div>
-                      <span className="shrink-0 text-xs bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full">{w.caliber}</span>
-                    </div>
+                    </button>
 
                     <div className="mt-4">
                       {totalsLoading && total === undefined ? (
@@ -2571,25 +2549,13 @@ function WeaponManager({ weapons, onRefresh }: { weapons: Weapon[]; onRefresh: (
                     })()}
 
                     <div className="flex items-center gap-2 mt-4 pt-3 border-t border-neutral-100 flex-wrap">
-                      <button onClick={() => toggleExpand(w)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">
-                        {expandedId === w.id ? 'Hide History' : 'Firing History'}
+                      <button onClick={() => onWeaponClick(w.id)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">
+                        Details
                       </button>
                       <button onClick={() => setLogCleaningWeapon(w)} className="text-xs px-2 py-1 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700">Log Cleaning</button>
                       <button onClick={() => startEdit(w)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">Edit</button>
                       <button onClick={() => deleteWeapon(w.id)} className="text-xs px-2 py-1 border border-red-200 text-red-600 rounded cursor-pointer hover:bg-red-50">Delete</button>
                     </div>
-
-                    {expandedId === w.id && (
-                      <div className="mt-3 pt-3 border-t border-neutral-100">
-                        {loading ? (
-                          <p className="text-sm text-neutral-500">Loading firing history…</p>
-                        ) : hist ? (
-                          <WeaponFiringHistoryView history={hist} fmtDate={fmtDate} fmtTime={fmtTime} />
-                        ) : (
-                          <p className="text-sm text-neutral-500">No firing history yet.</p>
-                        )}
-                      </div>
-                    )}
                   </>
                 )}
               </div>
@@ -2688,9 +2654,258 @@ function WeaponFiringHistoryView({ history, fmtDate, fmtTime }: {
   )
 }
 
-function InventoryDashboard({ inventory, weapons, totals, cleanings, onCaliberClick, onViewAmmo, onViewWeapons }: {
+function WeaponDetailView({ weaponId, onBack, onRefresh }: {
+  weaponId: number; onBack: () => void; onRefresh: () => void
+}) {
+  const [weapon, setWeapon] = useState<Weapon | null>(null)
+  const [history, setHistory] = useState<any>(null)
+  const [cleanings, setCleanings] = useState<WeaponCleaning[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [editData, setEditData] = useState<Partial<Weapon>>({})
+  const [error, setError] = useState('')
+  const [showCleaning, setShowCleaning] = useState(false)
+  const [showLogCleaning, setShowLogCleaning] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const [wRes, hRes, cRes] = await Promise.all([
+      apiFetch(`/weapons/${weaponId}`),
+      apiFetch(`/weapons/${weaponId}/history`),
+      apiFetch(`/weapons/${weaponId}/cleanings`),
+    ])
+    if (wRes.ok) setWeapon(await wRes.json())
+    if (hRes.ok) setHistory(await hRes.json())
+    if (cRes.ok) setCleanings(await cRes.json())
+    setLoading(false)
+  }, [weaponId])
+
+  useEffect(() => { load() }, [load])
+
+  const fmtDate = (d: string | Date) => new Date(d).toLocaleDateString()
+  const fmtTime = (d: string | Date) => new Date(d).toLocaleString()
+
+  const saveEdit = async () => {
+    const res = await apiFetch(`/weapons/${weaponId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(editData),
+    })
+    if (!res.ok) { const d = await res.json(); setError(d.error || 'Error'); return }
+    setEditing(false)
+    onRefresh()
+    load()
+  }
+
+  const deleteWeapon = async () => {
+    const res = await apiFetch(`/weapons/${weaponId}`, { method: 'DELETE' })
+    setShowDeleteConfirm(false)
+    if (!res.ok) {
+      const d = await res.json()
+      alert(d.error || 'Cannot delete')
+      return
+    }
+    onRefresh()
+    onBack()
+  }
+
+  if (loading) return <p className="text-neutral-400 text-sm">Loading weapon…</p>
+  if (!weapon) return (
+    <div>
+      <button onClick={onBack} className="text-sm text-neutral-500 hover:text-neutral-800 cursor-pointer transition-colors">← Back</button>
+      <p className="text-sm text-neutral-500 mt-4">Weapon not found.</p>
+    </div>
+  )
+
+  const total: number = history?.totalRounds ?? 0
+  const initial: number = weapon.initialRounds ?? history?.weapon?.initialRounds ?? 0
+  const tracked = Math.max(0, total - initial)
+
+  const latest = cleanings[0] ?? null
+  const baselineRounds = latest?.roundCountAtCleaning ?? 0
+  const baselineDate = latest ? new Date(latest.cleanedAt) : new Date(weapon.createdAt)
+  const roundsSince = Math.max(0, total - baselineRounds)
+  const daysSince = Math.max(0, Math.floor((Date.now() - baselineDate.getTime()) / 86400000))
+  const rInt = weapon.cleaningIntervalRounds
+  const dInt = weapon.cleaningIntervalDays
+  const hasSchedule = rInt != null || dInt != null
+  const overdue = hasSchedule && ((rInt != null && rInt - roundsSince <= 0) || (dInt != null && dInt - daysSince <= 0))
+
+  return (
+    <div>
+      {/* Back */}
+      <div className="flex items-center gap-3 mb-6">
+        <button
+          onClick={onBack}
+          className="text-sm text-neutral-500 hover:text-neutral-800 cursor-pointer transition-colors"
+        >
+          ← Back
+        </button>
+      </div>
+
+      {/* Weapon header card */}
+      <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm mb-8">
+        {editing ? (
+          <div className="flex flex-col gap-2">
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+            <input value={editData.name ?? ''} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} className="px-2 py-1 border rounded text-sm" placeholder="Name" />
+            <CaliberSelect value={editData.caliber ?? ''} onChange={v => setEditData(d => ({ ...d, caliber: v }))} />
+            <select value={editData.type ?? 'handgun'} onChange={e => setEditData(d => ({ ...d, type: e.target.value }))} className="px-2 py-1 border rounded text-sm">
+              <option value="handgun">Handgun</option>
+              <option value="rifle">Rifle</option>
+              <option value="shotgun">Shotgun</option>
+            </select>
+            <input value={editData.serialNumber ?? ''} onChange={e => setEditData(d => ({ ...d, serialNumber: e.target.value || null }))} className="px-2 py-1 border rounded text-sm" placeholder="Serial" />
+            <input value={editData.notes ?? ''} onChange={e => setEditData(d => ({ ...d, notes: e.target.value || null }))} className="px-2 py-1 border rounded text-sm" placeholder="Notes" />
+            <label className="text-[11px] text-neutral-500 mt-1">Initial rounds (pre-app)
+              <input type="text" inputMode="numeric" pattern="[0-9]*" value={editData.initialRounds ?? ''} onChange={e => setEditData(d => ({ ...d, initialRounds: e.target.value ? Number(e.target.value.replace(/\D/g, '')) : 0 }))} className="mt-1 px-2 py-1 border rounded text-sm w-full" placeholder="0" />
+            </label>
+            <div className="flex gap-2 mt-1">
+              <button onClick={saveEdit} className="text-xs px-2 py-1 bg-black text-white rounded cursor-pointer hover:opacity-80">Save</button>
+              <button onClick={() => setEditing(false)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">Cancel</button>
+            </div>
+            <div className="mt-3 pt-3 border-t border-neutral-100">
+              <button onClick={() => setShowDeleteConfirm(true)} className="text-xs px-2 py-1 border border-red-200 text-red-600 rounded cursor-pointer hover:bg-red-50">Delete weapon</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-start justify-between flex-wrap gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-2xl font-bold text-neutral-900">{weapon.name}</h2>
+                  <button onClick={() => { setEditData({ name: weapon.name, caliber: weapon.caliber, type: weapon.type, serialNumber: weapon.serialNumber, notes: weapon.notes, initialRounds: weapon.initialRounds }); setEditing(true) }} title="Edit weapon"
+                    className="text-neutral-400 hover:text-neutral-700 cursor-pointer transition-colors">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07A4.5 4.5 0 018.738 17.5l-3.5.875.875-3.5a4.5 4.5 0 011.447-1.843L16.862 4.487z" /></svg>
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500">
+                  <span className="bg-neutral-100 px-2 py-0.5 rounded-full capitalize">{weapon.type}</span>
+                  <span className="bg-neutral-100 px-2 py-0.5 rounded-full">{weapon.caliber}</span>
+                  {weapon.serialNumber && <span>S/N: {weapon.serialNumber}</span>}
+                </div>
+                {weapon.notes && <p className="text-sm text-neutral-500 mt-2">{weapon.notes}</p>}
+              </div>
+              <div className="text-right">
+                <p className="text-4xl font-bold text-neutral-900">{total.toLocaleString()}</p>
+                <p className="text-xs text-neutral-400 mt-0.5">rounds fired · total</p>
+              </div>
+            </div>
+            {initial > 0 && (
+              <p className="text-xs text-neutral-500 mt-2">{initial.toLocaleString()} prior (pre-app) + {tracked.toLocaleString()} tracked</p>
+            )}
+            {/* Cleaning status (display only — actions live below) */}
+            {hasSchedule && (
+              <div className={`mt-4 rounded-lg border p-3 ${overdue ? 'bg-red-50 border-red-200' : 'bg-neutral-50 border-neutral-200'}`}>
+                <span className={`text-xs font-semibold ${overdue ? 'text-red-700' : 'text-neutral-700'}`}>{overdue ? 'Overdue' : 'Cleaning due'}</span>
+                {rInt != null && (
+                  <div className="mt-2">
+                    <div className="flex justify-between text-[11px] text-neutral-500 mb-1"><span>{roundsSince}/{rInt} rds</span><span>{rInt - roundsSince > 0 ? `${rInt - roundsSince} left` : `${roundsSince - rInt} over`}</span></div>
+                    <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden"><div className={`h-full ${rInt - roundsSince <= 0 ? 'bg-red-500' : 'bg-neutral-900'}`} style={{ width: `${Math.min(100, Math.max(0, (roundsSince / rInt) * 100))}%` }} /></div>
+                  </div>
+                )}
+                {dInt != null && (
+                  <div className="mt-2">
+                    <div className="flex justify-between text-[11px] text-neutral-500 mb-1"><span>{daysSince}/{dInt}d</span><span>{dInt - daysSince > 0 ? `${dInt - daysSince}d left` : `${daysSince - dInt}d over`}</span></div>
+                    <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden"><div className={`h-full ${dInt - daysSince <= 0 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${Math.min(100, Math.max(0, (daysSince / dInt) * 100))}%` }} /></div>
+                  </div>
+                )}
+                <p className="text-[11px] text-neutral-400 mt-2">Last: {latest ? `${new Date(latest.cleanedAt).toLocaleDateString()} @ ${latest.roundCountAtCleaning.toLocaleString()} rds` : `Never`}{latest?.note ? ` · ${latest.note}` : ''}</p>
+              </div>
+            )}
+            <div className="mt-4 pt-3 border-t border-neutral-100 flex flex-col gap-2">
+              <button onClick={() => setShowLogCleaning(true)} className="w-full px-4 py-3 bg-blue-600 text-white rounded-xl text-base font-semibold cursor-pointer hover:bg-blue-700 active:bg-blue-800">Log Cleaning</button>
+              <button onClick={() => setShowCleaning(true)} className="w-full px-4 py-3 border border-neutral-300 bg-white rounded-xl text-base font-medium text-neutral-800 cursor-pointer hover:bg-neutral-50 active:bg-neutral-100">{hasSchedule ? 'Manage cleaning schedule' : 'Set up cleaning schedule'}</button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Firing history */}
+      <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">
+        Firing History
+      </h3>
+      <div className="mb-8">
+        {history ? (
+          <WeaponFiringHistoryView history={history} fmtDate={fmtDate} fmtTime={fmtTime} />
+        ) : (
+          <p className="text-sm text-neutral-500">No firing history yet.</p>
+        )}
+      </div>
+
+      {/* Cleaning log */}
+      <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">
+        Cleaning Log
+      </h3>
+      {cleanings.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-neutral-200 p-8 text-center">
+          <p className="text-neutral-400 text-sm">No cleanings logged yet.</p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden shadow-sm divide-y divide-neutral-100">
+          {cleanings.map(c => (
+            <div key={c.id} className="flex justify-between items-center px-4 py-3 text-sm">
+              <span className="text-neutral-700">{new Date(c.cleanedAt).toLocaleDateString()} <span className="text-neutral-400">@ {c.roundCountAtCleaning.toLocaleString()} rds</span></span>
+              {c.note
+                ? <span className="text-xs text-neutral-500 truncate max-w-[200px]">{c.note}</span>
+                : <span className="text-xs text-neutral-300">—</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showCleaning && (
+        <CleaningModal
+          weapon={weapon}
+          totalRounds={total}
+          cleanings={cleanings}
+          onClose={() => setShowCleaning(false)}
+          onSaved={async () => {
+            const res = await apiFetch(`/weapons/${weaponId}/cleanings`)
+            if (res.ok) setCleanings(await res.json())
+            onRefresh()
+            const wRes = await apiFetch(`/weapons/${weaponId}`)
+            if (wRes.ok) setWeapon(await wRes.json())
+          }}
+        />
+      )}
+      {showLogCleaning && (
+        <LogCleaningModal
+          weapon={weapon}
+          totalRounds={total}
+          onClose={() => setShowLogCleaning(false)}
+          onSaved={async () => {
+            const res = await apiFetch(`/weapons/${weaponId}/cleanings`)
+            if (res.ok) setCleanings(await res.json())
+            onRefresh()
+          }}
+        />
+      )}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowDeleteConfirm(false)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold">Delete {weapon.name}?</h3>
+            <p className="text-sm text-neutral-600 mt-2">
+              This permanently deletes the weapon and its history. This can't be undone.
+            </p>
+            <div className="flex gap-3 mt-4">
+              <button type="button" onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Cancel</button>
+              <button type="button" onClick={deleteWeapon}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InventoryDashboard({ inventory, weapons, totals, cleanings, onCaliberClick, onWeaponClick, onViewAmmo, onViewWeapons }: {
   inventory: InventoryItem[]; weapons: Weapon[]; totals: Record<number, number>; cleanings: Record<number, WeaponCleaning[]>
-  onCaliberClick: (group: CaliberGroup) => void; onViewAmmo: () => void; onViewWeapons: () => void
+  onCaliberClick: (group: CaliberGroup) => void; onWeaponClick: (weaponId: number) => void; onViewAmmo: () => void; onViewWeapons: () => void
 }) {
   const groups = useMemo<CaliberGroup[]>(() => {
     const map = new Map<string, InventoryItem[]>()
@@ -2772,12 +2987,12 @@ function InventoryDashboard({ inventory, weapons, totals, cleanings, onCaliberCl
           {weapons.slice(0, 3).map(w => {
             const total = totals[w.id] ?? 0
             return (
-              <div key={w.id} className="rounded-xl border border-neutral-200 bg-white p-4">
+              <button key={w.id} onClick={() => onWeaponClick(w.id)} className="rounded-xl border border-neutral-200 bg-white p-4 text-left hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
                 <p className="text-sm font-semibold truncate">{w.name}</p>
                 <p className="text-xs text-neutral-400 capitalize">{w.type} · {w.caliber}</p>
                 <p className="text-lg font-bold mt-2">{total.toLocaleString()} rds</p>
-                <p className="text-xs text-neutral-400">fired</p>
-              </div>
+                <p className="text-xs text-neutral-400">fired · tap for details</p>
+              </button>
             )
           })}
         </div>
@@ -3127,6 +3342,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
   const [showPpr, setShowPpr] = useState(false)
   const [tab, setTab] = useState<'inventory' | 'ammo' | 'types' | 'weapons' | 'history' | 'range-days' | 'backup'>('inventory')
   const [viewingCaliberName, setViewingCaliberName] = useState<string | null>(null)
+  const [viewingWeaponId, setViewingWeaponId] = useState<number | null>(null)
   const [txRefreshKey, setTxRefreshKey] = useState(0)
   const [weaponTotals, setWeaponTotals] = useState<Record<number, number>>({})
   const [weaponCleanings, setWeaponCleanings] = useState<Record<number, WeaponCleaning[]>>({})
@@ -3143,6 +3359,10 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
       totalBalance: items.reduce((sum, i) => sum + i.balance, 0),
     }
   }, [viewingCaliberName, inventory])
+
+  const viewingWeapon = viewingWeaponId != null
+    ? weapons.find(w => w.id === viewingWeaponId) ?? null
+    : null
 
   const ammoGroups = useMemo<CaliberGroup[]>(() => {
     const map = new Map<string, InventoryItem[]>()
@@ -3298,7 +3518,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         {/* Tabs */}
         <div className="flex gap-1 border-b border-neutral-200 mb-6 mt-8 overflow-x-auto">
           {(['inventory', 'ammo', 'types', 'weapons', 'history', 'range-days', 'backup'] as const).map(t => (
-            <button key={t} onClick={() => { setTab(t); setViewingCaliberName(null); setActiveAction(null) }}
+            <button key={t} onClick={() => { setTab(t); setViewingCaliberName(null); setViewingWeaponId(null); setActiveAction(null) }}
               className={`px-4 py-2 text-sm font-medium capitalize cursor-pointer transition-colors whitespace-nowrap ${
                 tab === t
                   ? 'border-b-2 border-black text-black'
@@ -3310,7 +3530,13 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         </div>
 
         {tab === 'inventory' && (
-          viewingCaliber ? (
+          viewingWeapon ? (
+            <WeaponDetailView
+              weaponId={viewingWeapon.id}
+              onBack={() => setViewingWeaponId(null)}
+              onRefresh={loadInventory}
+            />
+          ) : viewingCaliber ? (
             <CaliberDetailView
               group={viewingCaliber}
               refreshKey={txRefreshKey}
@@ -3325,6 +3551,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
               totals={weaponTotals}
               cleanings={weaponCleanings}
               onCaliberClick={g => setViewingCaliberName(g.caliber)}
+              onWeaponClick={id => setViewingWeaponId(id)}
               onViewAmmo={() => setTab('ammo')}
               onViewWeapons={() => setTab('weapons')}
             />
@@ -3466,7 +3693,15 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         )}
 
         {tab === 'weapons' && (
-          <WeaponManager weapons={weapons} onRefresh={loadInventory} />
+          viewingWeapon ? (
+            <WeaponDetailView
+              weaponId={viewingWeapon.id}
+              onBack={() => setViewingWeaponId(null)}
+              onRefresh={loadInventory}
+            />
+          ) : (
+            <WeaponManager weapons={weapons} onRefresh={loadInventory} onWeaponClick={id => setViewingWeaponId(id)} />
+          )
         )}
 
         {tab === 'history' && (
