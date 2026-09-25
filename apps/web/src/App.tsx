@@ -855,6 +855,59 @@ function relativeTime(iso: string): string {
   return `${days}d ago`
 }
 
+function PprCalculatorModal({ onClose }: { onClose: () => void }) {
+  const [roundsStr, setRoundsStr] = useState('')
+  const [totalStr, setTotalStr] = useState('')
+  const roundsRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    roundsRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const rounds = Number(roundsStr.replace(/,/g, '').trim())
+  const total = Number(totalStr.replace(/[$,\s]/g, '').trim())
+  const valid = Number.isFinite(rounds) && Number.isFinite(total) && rounds > 0 && total >= 0
+  const ppr = valid ? total / rounds : null
+  const headline = ppr == null
+    ? '— per round'
+    : ppr < 1
+      ? `${(ppr * 100).toFixed(1)}¢ per round`
+      : `$${ppr.toFixed(2)} per round`
+  const detail = ppr == null
+    ? 'Enter rounds + total above'
+    : `$${ppr.toFixed(4)} / rd · $${(ppr * 1000).toFixed(2)} per 1000`
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4"
+      onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">Price per Round</h3>
+          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 text-xl leading-none cursor-pointer">×</button>
+        </div>
+        <label className="block text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">Rounds</label>
+        <input ref={roundsRef} type="text" inputMode="numeric" placeholder="e.g. 1000"
+          value={roundsStr} onChange={e => setRoundsStr(e.target.value)}
+          className="w-full px-4 py-3 border rounded-xl text-lg tabular-nums mb-4" />
+        <label className="block text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">Total cost</label>
+        <input type="text" inputMode="decimal" placeholder="e.g. 45.99"
+          value={totalStr} onChange={e => setTotalStr(e.target.value)}
+          className="w-full px-4 py-3 border rounded-xl text-lg tabular-nums" />
+        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-center">
+          <p className="text-2xl font-bold tabular-nums">{headline}</p>
+          <p className="text-xs text-neutral-500 tabular-nums mt-1">{detail}</p>
+        </div>
+        <button type="button" onClick={() => { setRoundsStr(''); setTotalStr(''); roundsRef.current?.focus() }}
+          className="mt-4 w-full px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Clear</button>
+      </div>
+    </div>
+  )
+}
+
 function ConfirmEndModal({ bag, strings, weapons, ammoTypes, onConfirm, onCancel }: {
   bag: BagItem[]
   strings: RangeDayString[]
@@ -3071,6 +3124,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
   const [weapons, setWeapons] = useState<Weapon[]>([])
   const [inventoryLoading, setInventoryLoading] = useState(true)
   const [activeAction, setActiveAction] = useState<QuickAction>(null)
+  const [showPpr, setShowPpr] = useState(false)
   const [tab, setTab] = useState<'inventory' | 'ammo' | 'types' | 'weapons' | 'history' | 'range-days' | 'backup'>('inventory')
   const [viewingCaliberName, setViewingCaliberName] = useState<string | null>(null)
   const [txRefreshKey, setTxRefreshKey] = useState(0)
@@ -3220,7 +3274,12 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         </h2>
 
         {/* Range Day CTA */}
-        <div className="flex justify-end mb-6">
+        <div className="flex justify-end gap-3 mb-6">
+          <button
+            onClick={() => setShowPpr(true)}
+            className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm border border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-50 transition-colors cursor-pointer">
+            🧮 PPR Calc
+          </button>
           {activeSession ? (
             <button
               onClick={onResumeRangeDay}
@@ -3422,6 +3481,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
           <ExportImportTab onImported={loadInventory} />
         )}
       </main>
+      {showPpr && <PprCalculatorModal onClose={() => setShowPpr(false)} />}
     </div>
   )
 }
