@@ -83,7 +83,7 @@ function badgeColor(type: string): string {
     case 'transfer': return 'bg-blue-100 text-blue-800'
     case 'range_day_start': return 'bg-purple-100 text-purple-800'
     case 'range_day_end': return 'bg-indigo-100 text-indigo-800'
-    default: return 'bg-neutral-100 text-neutral-700'
+    default: return 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300'
   }
 }
 
@@ -199,7 +199,7 @@ function CaliberSelect({ value, onChange }: { value: string; onChange: (v: strin
           Add
         </button>
         <button type="button" onClick={() => setAddingCustom(false)}
-          className="px-3 py-2 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">
+          className="px-3 py-2 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">
           Cancel
         </button>
       </div>
@@ -208,7 +208,7 @@ function CaliberSelect({ value, onChange }: { value: string; onChange: (v: strin
 
   return (
     <select value={value} onChange={handleSelect}
-      className="px-3 py-2 border rounded-lg text-sm w-full bg-white">
+      className="px-3 py-2 border rounded-lg text-sm w-full bg-white dark:bg-neutral-900">
       {!value && <option value="" disabled>Select caliber…</option>}
       {STANDARD_CALIBERS.map(({ group, calibers }) => (
         <optgroup key={group} label={group}>
@@ -248,8 +248,8 @@ function InventoryCards({ inventory, onEmpty, onCaliberClick }: {
 
   if (inventory.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-neutral-300 p-10 text-center">
-        <p className="text-neutral-500 mb-4">No ammo types yet — create one to get started.</p>
+      <div className="rounded-xl border border-dashed border-neutral-300 dark:border-neutral-600 p-10 text-center">
+        <p className="text-neutral-500 dark:text-neutral-400 mb-4">No ammo types yet — create one to get started.</p>
         <button
           onClick={onEmpty}
           className="text-sm px-4 py-2 rounded-lg bg-black text-white hover:opacity-80 transition-opacity cursor-pointer"
@@ -265,18 +265,18 @@ function InventoryCards({ inventory, onEmpty, onCaliberClick }: {
         <button
           key={group.caliber}
           onClick={() => onCaliberClick(group)}
-          className="rounded-lg border border-neutral-200 bg-white p-5 shadow-sm text-left hover:border-neutral-400 hover:shadow-md transition-all cursor-pointer group"
+          className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-5 shadow-sm text-left hover:border-neutral-400 hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-start justify-between mb-1">
-            <p className="text-lg font-bold text-neutral-900 group-hover:text-neutral-700">{group.caliber}</p>
-            <span className="ml-2 shrink-0 text-xs bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full">
+            <p className="text-lg font-bold text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-700 dark:group-hover:text-neutral-300">{group.caliber}</p>
+            <span className="ml-2 shrink-0 text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 px-2 py-0.5 rounded-full">
               {group.items.length} type{group.items.length !== 1 ? 's' : ''}
             </span>
           </div>
           <p className={`text-3xl font-bold mt-2 ${balanceColor(group.totalBalance)}`}>
             {group.totalBalance.toLocaleString()}
           </p>
-          <p className="text-xs text-neutral-400 mt-1">rounds · tap for details</p>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">rounds · tap for details</p>
         </button>
       ))}
     </div>
@@ -286,10 +286,10 @@ function InventoryCards({ inventory, onEmpty, onCaliberClick }: {
 // Quick action form wrapper
 function QuickForm({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm mt-4">
+    <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mt-4">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-neutral-900">{title}</h3>
-        <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 cursor-pointer text-xl leading-none">&times;</button>
+        <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">{title}</h3>
+        <button onClick={onClose} className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer text-xl leading-none">&times;</button>
       </div>
       {children}
     </div>
@@ -327,7 +327,7 @@ function ExpendForm({ ammoTypes, onSuccess, onClose }: {
   return (
     <form onSubmit={submit} className="flex flex-col gap-3">
       <select value={ammoTypeId} onChange={e => setAmmoTypeId(Number(e.target.value))}
-        className="px-3 py-2 border rounded-lg text-sm">
+        className="px-3 py-2 border rounded-lg text-sm bg-white dark:bg-neutral-900">
         {ammoTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
       </select>
       <input type="number" min="1" placeholder="Quantity" value={quantity} required
@@ -367,7 +367,7 @@ function AdjustForm({ ammoTypes, onSuccess, onClose }: {
   return (
     <form onSubmit={submit} className="flex flex-col gap-3">
       <select value={ammoTypeId} onChange={e => setAmmoTypeId(Number(e.target.value))}
-        className="px-3 py-2 border rounded-lg text-sm">
+        className="px-3 py-2 border rounded-lg text-sm bg-white dark:bg-neutral-900">
         {ammoTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
       </select>
       <input type="number" placeholder="Quantity (+/-)" value={quantity} required
@@ -516,10 +516,10 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <header className="border-b border-neutral-200 bg-white sticky top-0 z-10">
+    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
+      <header className="border-b border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 sticky top-0 z-10">
         <div className="mx-auto max-w-3xl flex items-center justify-between px-6 h-16">
-          <button onClick={onCancel} className="text-neutral-400 hover:text-neutral-700 cursor-pointer">← Cancel</button>
+          <button onClick={onCancel} className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer">← Cancel</button>
           <h1 className="text-lg font-bold tracking-tight">Start Range Day</h1>
           <div className="w-16" />
         </div>
@@ -527,19 +527,19 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
 
       <main className="mx-auto max-w-3xl px-6 py-8">
         {/* Step heading */}
-        <h2 className="text-xl font-semibold text-center text-neutral-900 mb-6">
+        <h2 className="text-xl font-semibold text-center text-neutral-900 dark:text-neutral-100 mb-6">
           {step === 1 ? 'Choose your weapons' : 'Choose your ammo'}
         </h2>
 
         {loading ? (
-          <p className="text-neutral-500 text-sm">Loading…</p>
+          <p className="text-neutral-500 dark:text-neutral-400 text-sm">Loading…</p>
         ) : (
           <form onSubmit={submit} className="flex flex-col gap-6">
             {step === 1 && (
               <div>
-                <p className="text-sm text-neutral-500 mb-3">Tap the weapons you're bringing. You can add more later on the Weapons tab.</p>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-3">Tap the weapons you're bringing. You can add more later on the Weapons tab.</p>
                 {weapons.length === 0 ? (
-                  <p className="text-sm text-neutral-400">No weapons yet — you can skip this and add them later.</p>
+                  <p className="text-sm text-neutral-400 dark:text-neutral-500">No weapons yet — you can skip this and add them later.</p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {weapons.map(w => {
@@ -547,18 +547,18 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
                       return (
                         <button type="button" key={w.id} onClick={() => toggleWeapon(w.id)}
                           className={`text-left rounded-xl border p-4 flex flex-col gap-3 transition-colors cursor-pointer ${
-                            selected ? 'border-black bg-neutral-50 ring-1 ring-black' : 'border-neutral-200 bg-white hover:border-neutral-400'
+                            selected ? 'border-black bg-neutral-50 dark:bg-neutral-800 ring-1 ring-black' : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-neutral-400'
                           }`}>
                           <div className="flex items-start justify-between gap-2">
                             <div>
-                              <p className="font-semibold text-neutral-900">{w.name}</p>
-                              <p className="text-xs text-neutral-400 capitalize mt-0.5">{w.type} · {w.caliber}</p>
+                              <p className="font-semibold text-neutral-900 dark:text-neutral-100">{w.name}</p>
+                              <p className="text-xs text-neutral-400 dark:text-neutral-500 capitalize mt-0.5">{w.type} · {w.caliber}</p>
                             </div>
-                            <span className="shrink-0 text-xs bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full">{w.caliber}</span>
+                            <span className="shrink-0 text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 px-2 py-0.5 rounded-full">{w.caliber}</span>
                           </div>
                           <div className="flex items-center gap-2 text-sm">
-                            <span className={`w-4 h-4 rounded-full border flex items-center justify-center text-[10px] ${selected ? 'bg-black text-white border-black' : 'border-neutral-300 text-transparent'}`}>✓</span>
-                            <span className={selected ? 'text-neutral-900 font-medium' : 'text-neutral-400'}>
+                            <span className={`w-4 h-4 rounded-full border flex items-center justify-center text-[10px] ${selected ? 'bg-black text-white border-black' : 'border-neutral-300 dark:border-neutral-600 text-transparent'}`}>✓</span>
+                            <span className={selected ? 'text-neutral-900 dark:text-neutral-100 font-medium' : 'text-neutral-400 dark:text-neutral-500'}>
                               {selected ? 'In your range bag' : 'Add to range bag'}
                             </span>
                           </div>
@@ -577,20 +577,20 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
             {step === 2 && (
               <div className="flex flex-col gap-4">
                 {/* Keep the selected-weapon context visible on the ammo step */}
-                <div className="rounded-xl border border-neutral-200 bg-white p-4">
+                <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium text-neutral-700">Your range bag</p>
+                    <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Your range bag</p>
                     <button type="button" onClick={() => setStep(1)}
-                      className="text-xs text-neutral-400 hover:text-neutral-700 cursor-pointer">Edit</button>
+                      className="text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer">Edit</button>
                   </div>
                   {selectedWeapons.length === 0 ? (
-                    <p className="text-sm text-neutral-400">No weapons selected — you can add them later on the Weapons tab.</p>
+                    <p className="text-sm text-neutral-400 dark:text-neutral-500">No weapons selected — you can add them later on the Weapons tab.</p>
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {weapons.filter(w => selectedWeapons.includes(w.id)).map(w => (
-                        <span key={w.id} className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-100 rounded-lg text-sm">
-                          <span className="font-medium text-neutral-800">{w.name}</span>
-                          <span className="text-xs text-neutral-400">{w.caliber}</span>
+                        <span key={w.id} className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg text-sm">
+                          <span className="font-medium text-neutral-800 dark:text-neutral-200">{w.name}</span>
+                          <span className="text-xs text-neutral-400 dark:text-neutral-500">{w.caliber}</span>
                         </span>
                       ))}
                     </div>
@@ -601,9 +601,9 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
                   onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
 
                 <div>
-                  <p className="text-sm font-medium text-neutral-700 mb-2">Ammo to take</p>
+                  <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Ammo to take</p>
                   {ammoStepTypes.length === 0 ? (
-                    <p className="text-xs text-neutral-400 mt-2">
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-2">
                       {bagCalibers.size > 0
                         ? 'No ammo in storage matches the calibers of the weapons in your range bag.'
                         : 'No rounds in storage — add inventory on the Ammo tab first.'}
@@ -620,13 +620,13 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
                           <div key={t.id}
                             onClick={() => { if (!inCart) toggleAmmo(t.id) }}
                             className={`rounded-xl border p-4 flex items-center justify-between gap-3 transition-colors cursor-pointer ${
-                              inCart ? 'border-black bg-neutral-50' : 'border-neutral-200 bg-white hover:border-neutral-400'
+                              inCart ? 'border-black bg-neutral-50 dark:bg-neutral-800' : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-neutral-400'
                             }`}>
                             <div>
-                              <p className="font-semibold text-neutral-900">{t.name}</p>
+                              <p className="font-semibold text-neutral-900 dark:text-neutral-100">{t.name}</p>
                               <div className="flex items-center gap-2 mt-1">
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${over ? 'bg-red-100 text-red-700' : 'bg-neutral-100 text-neutral-500'}`}>{t.caliber}</span>
-                                <span className={`text-xs ${over ? 'text-red-500' : 'text-neutral-400'}`}>{avail.toLocaleString()} in storage</span>
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${over ? 'bg-red-100 text-red-700' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400'}`}>{t.caliber}</span>
+                                <span className={`text-xs ${over ? 'text-red-500' : 'text-neutral-400 dark:text-neutral-500'}`}>{avail.toLocaleString()} in storage</span>
                               </div>
                             </div>
                             {inCart ? (
@@ -636,10 +636,10 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
                                   onStep={(d) => stepAmmo(t.id, d)}
                                   steps={[50, 100]} step={1} inline />
                                 <button type="button" onClick={() => toggleAmmo(t.id)} title="Remove"
-                                  className="w-9 h-9 rounded-lg border border-neutral-200 text-neutral-400 hover:text-red-500 hover:border-red-200 cursor-pointer">×</button>
+                                  className="w-9 h-9 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-400 dark:text-neutral-500 hover:text-red-500 hover:border-red-200 cursor-pointer">×</button>
                               </div>
                             ) : (
-                              <span className="text-sm text-neutral-400">Add</span>
+                              <span className="text-sm text-neutral-400 dark:text-neutral-500">Add</span>
                             )}
                           </div>
                         )
@@ -652,7 +652,7 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
 
                 <div className="flex items-center gap-3">
                   <button type="button" onClick={() => setStep(1)}
-                    className="px-4 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">← Back</button>
+                    className="px-4 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">← Back</button>
                   <button type="submit" disabled={submitting}
                     className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer disabled:opacity-40">
                     Start Range Day
@@ -701,7 +701,7 @@ function AmmoTypeManager({ ammoTypes, onRefresh }: {
   }
 
   if (ammoTypes.length === 0) {
-    return <p className="text-sm text-neutral-500">No ammo types yet.</p>
+    return <p className="text-sm text-neutral-500 dark:text-neutral-400">No ammo types yet.</p>
   }
 
   return (
@@ -709,7 +709,7 @@ function AmmoTypeManager({ ammoTypes, onRefresh }: {
       {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-neutral-200 text-left text-neutral-500">
+          <tr className="border-b border-neutral-200 dark:border-neutral-700 text-left text-neutral-500 dark:text-neutral-400">
             <th className="py-2 pr-4">Name</th>
             <th className="py-2 pr-4">Caliber</th>
             <th className="py-2 pr-4">Grain</th>
@@ -719,7 +719,7 @@ function AmmoTypeManager({ ammoTypes, onRefresh }: {
         </thead>
         <tbody>
           {ammoTypes.map(t => (
-            <tr key={t.id} className="border-b border-neutral-100 last:border-0">
+            <tr key={t.id} className="border-b border-neutral-100 dark:border-neutral-800 last:border-0">
               {editingId === t.id ? (
                 <>
                   <td className="py-2 pr-4"><input value={editData.name ?? ''} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} className="px-2 py-1 border rounded text-sm w-full" /></td>
@@ -728,17 +728,17 @@ function AmmoTypeManager({ ammoTypes, onRefresh }: {
                   <td className="py-2 pr-4"><input value={editData.brand ?? ''} onChange={e => setEditData(d => ({ ...d, brand: e.target.value || null }))} className="px-2 py-1 border rounded text-sm w-24" /></td>
                   <td className="py-2 flex gap-2">
                     <button onClick={saveEdit} className="text-xs px-2 py-1 bg-black text-white rounded cursor-pointer hover:opacity-80">Save</button>
-                    <button onClick={() => setEditingId(null)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">Cancel</button>
+                    <button onClick={() => setEditingId(null)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">Cancel</button>
                   </td>
                 </>
               ) : (
                 <>
                   <td className="py-2 pr-4 font-medium">{t.name}</td>
-                  <td className="py-2 pr-4 text-neutral-500">{t.caliber}</td>
-                  <td className="py-2 pr-4 text-neutral-500">{t.grain ?? '—'}</td>
-                  <td className="py-2 pr-4 text-neutral-500">{t.brand ?? '—'}</td>
+                  <td className="py-2 pr-4 text-neutral-500 dark:text-neutral-400">{t.caliber}</td>
+                  <td className="py-2 pr-4 text-neutral-500 dark:text-neutral-400">{t.grain ?? '—'}</td>
+                  <td className="py-2 pr-4 text-neutral-500 dark:text-neutral-400">{t.brand ?? '—'}</td>
                   <td className="py-2 flex gap-2">
-                    <button onClick={() => startEdit(t)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">Edit</button>
+                    <button onClick={() => startEdit(t)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">Edit</button>
                     <button onClick={() => deleteType(t.id)} className="text-xs px-2 py-1 border border-red-200 text-red-600 rounded cursor-pointer hover:bg-red-50">Delete</button>
                   </td>
                 </>
@@ -788,49 +788,49 @@ function TransactionHistory({ ammoTypes }: { ammoTypes: AmmoType[] }) {
     <div>
       <div className="flex gap-3 mb-4 flex-wrap">
         <select value={filterType} onChange={e => setFilterType(e.target.value)}
-          className="px-3 py-1.5 border rounded-lg text-sm">
+          className="px-3 py-1.5 border rounded-lg text-sm bg-white dark:bg-neutral-900">
           <option value="">All types</option>
           {['acquisition', 'expenditure', 'adjustment', 'transfer', 'range_day_start', 'range_day_end'].map(t => (
             <option key={t} value={t}>{txLabel(t)}</option>
           ))}
         </select>
         <select value={filterAmmoTypeId} onChange={e => setFilterAmmoTypeId(e.target.value)}
-          className="px-3 py-1.5 border rounded-lg text-sm">
+          className="px-3 py-1.5 border rounded-lg text-sm bg-white dark:bg-neutral-900">
           <option value="">All ammo types</option>
           {ammoTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </div>
 
       {loading ? (
-        <p className="text-neutral-400 text-sm">Loading...</p>
+        <p className="text-neutral-400 dark:text-neutral-500 text-sm">Loading...</p>
       ) : transactions.length === 0 ? (
-        <p className="text-neutral-400 text-sm">No transactions yet.</p>
+        <p className="text-neutral-400 dark:text-neutral-500 text-sm">No transactions yet.</p>
       ) : (
-        <div className="divide-y divide-neutral-100">
+        <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
           {transactions.map(tx => (
             <div key={tx.id}>
               <button
                 onClick={() => loadEntries(tx.id)}
-                className="w-full text-left py-3 flex items-center gap-3 hover:bg-neutral-50 cursor-pointer transition-colors"
+                className="w-full text-left py-3 flex items-center gap-3 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer transition-colors"
               >
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badgeColor(tx.type)}`}>{txLabel(tx.type)}</span>
-                <span className="text-sm text-neutral-500">{new Date(tx.occurredAt).toLocaleDateString()}</span>
-                {tx.note && <span className="text-sm text-neutral-600 truncate">{tx.note}</span>}
-                <span className="ml-auto text-neutral-400 text-xs">{expandedId === tx.id ? '▲' : '▼'}</span>
+                <span className="text-sm text-neutral-500 dark:text-neutral-400">{new Date(tx.occurredAt).toLocaleDateString()}</span>
+                {tx.note && <span className="text-sm text-neutral-600 dark:text-neutral-400 truncate">{tx.note}</span>}
+                <span className="ml-auto text-neutral-400 dark:text-neutral-500 text-xs">{expandedId === tx.id ? '▲' : '▼'}</span>
               </button>
               {expandedId === tx.id && tx.entries && (
                 <div className="pl-4 pb-3 space-y-1">
                   {tx.entries.filter(e => !e.isBalancing).map(e => (
                     <div key={e.id} className="flex items-center gap-2 text-sm">
-                      <span className="text-neutral-500">{typeForId(e.ammoTypeId)}</span>
+                      <span className="text-neutral-500 dark:text-neutral-400">{typeForId(e.ammoTypeId)}</span>
                       <span className={e.quantity > 0 ? 'text-green-700 font-medium' : 'text-red-600 font-medium'}>
                         {e.quantity > 0 ? `+${e.quantity}` : e.quantity}
                       </span>
-                      <span className="text-neutral-400 text-xs">[{e.location}]</span>
+                      <span className="text-neutral-400 dark:text-neutral-500 text-xs">[{e.location}]</span>
                     </div>
                   ))}
                   {tx.price != null && (
-                    <div className="text-xs text-neutral-500 mt-1">
+                    <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                       Price: ${(tx.price / 100).toFixed(2)}{tx.vendor ? ` · ${tx.vendor}` : ''}
                     </div>
                   )}
@@ -883,26 +883,26 @@ function PprCalculatorModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4"
       onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6"
+      <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-sm w-full p-6"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">Price per Round</h3>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 text-xl leading-none cursor-pointer">×</button>
+          <button onClick={onClose} className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 text-xl leading-none cursor-pointer">×</button>
         </div>
-        <label className="block text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">Rounds</label>
+        <label className="block text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">Rounds</label>
         <input ref={roundsRef} type="text" inputMode="numeric" placeholder="e.g. 1000"
           value={roundsStr} onChange={e => setRoundsStr(e.target.value)}
           className="w-full px-4 py-3 border rounded-xl text-lg tabular-nums mb-4" />
-        <label className="block text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">Total cost</label>
+        <label className="block text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">Total cost</label>
         <input type="text" inputMode="decimal" placeholder="e.g. 45.99"
           value={totalStr} onChange={e => setTotalStr(e.target.value)}
           className="w-full px-4 py-3 border rounded-xl text-lg tabular-nums" />
-        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-center">
+        <div className="mt-4 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 p-4 text-center">
           <p className="text-2xl font-bold tabular-nums">{headline}</p>
-          <p className="text-xs text-neutral-500 tabular-nums mt-1">{detail}</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 tabular-nums mt-1">{detail}</p>
         </div>
         <button type="button" onClick={() => { setRoundsStr(''); setTotalStr(''); roundsRef.current?.focus() }}
-          className="mt-4 w-full px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Clear</button>
+          className="mt-4 w-full px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">Clear</button>
       </div>
     </div>
   )
@@ -930,16 +930,16 @@ function ConfirmEndModal({ bag, strings, weapons, ammoTypes, onConfirm, onCancel
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+      <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-md w-full p-6">
         <h3 className="text-lg font-semibold mb-1">End Range Day</h3>
-        <p className="text-sm text-neutral-600 mb-3">
+        <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
           Any ammo left in the bag (<span className="font-semibold">{leftover}</span> rounds) will be returned to storage.
           Rounds already fired are recorded as expended.
         </p>
 
         <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
           <div className="px-3 py-2 flex justify-between text-sm">
-            <span className="font-medium text-neutral-700">Fired this session</span>
+            <span className="font-medium text-neutral-700 dark:text-neutral-300">Fired this session</span>
             <span className="font-semibold">{totalFired}</span>
           </div>
           {[...firedByWeapon.entries()].map(([weaponId, byType]) => {
@@ -949,13 +949,13 @@ function ConfirmEndModal({ bag, strings, weapons, ammoTypes, onConfirm, onCancel
               <div key={weaponId} className="px-3 py-2">
                 <div className="flex justify-between text-sm">
                   <span className="font-medium">{w?.name ?? `Weapon #${weaponId}`}</span>
-                  <span className="text-neutral-500">{weaponTotal}</span>
+                  <span className="text-neutral-500 dark:text-neutral-400">{weaponTotal}</span>
                 </div>
                 <div className="mt-1 space-y-0.5">
                   {[...byType.entries()].map(([ammoTypeId, rounds]) => {
                     const t = ammoTypes.find(a => a.id === ammoTypeId)
                     return (
-                      <div key={ammoTypeId} className="flex justify-between text-xs text-neutral-500 pl-3">
+                      <div key={ammoTypeId} className="flex justify-between text-xs text-neutral-500 dark:text-neutral-400 pl-3">
                         <span>{t?.name ?? `Type #${ammoTypeId}`}</span>
                         <span>{rounds}</span>
                       </div>
@@ -967,13 +967,13 @@ function ConfirmEndModal({ bag, strings, weapons, ammoTypes, onConfirm, onCancel
           })}
 
           <div className="px-3 py-2 flex justify-between text-sm">
-            <span className="font-medium text-neutral-700">Bought this session</span>
+            <span className="font-medium text-neutral-700 dark:text-neutral-300">Bought this session</span>
             <span className="font-semibold">{totalAcquired}</span>
           </div>
           {bag.filter(b => b.acquired > 0).map(b => {
             const t = ammoTypes.find(a => a.id === b.ammoTypeId)
             return (
-              <div key={b.ammoTypeId} className="px-3 py-1.5 flex justify-between text-xs text-neutral-500">
+              <div key={b.ammoTypeId} className="px-3 py-1.5 flex justify-between text-xs text-neutral-500 dark:text-neutral-400">
                 <span>{t?.name ?? `Type #${b.ammoTypeId}`}</span>
                 <span>{b.acquired}</span>
               </div>
@@ -983,7 +983,7 @@ function ConfirmEndModal({ bag, strings, weapons, ammoTypes, onConfirm, onCancel
 
         <div className="flex gap-3 mt-4">
           <button type="button" onClick={onCancel}
-            className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Cancel</button>
+            className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">Cancel</button>
           <button type="button" onClick={onConfirm}
             className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer">End Range Day</button>
         </div>
@@ -1128,22 +1128,22 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
 
   return (
     <>
-    <div className="rounded-xl border border-neutral-200 bg-white p-4 flex flex-col">
+    <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 flex flex-col">
       {/* Weapon hero top, Loaded/Fired underneath like before */}
-      <div className="rounded-xl border border-neutral-200 bg-white px-6 py-5 text-center">
-        <div className="mx-auto w-full max-w-[220px] h-24 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 flex items-center justify-center text-[11px] text-neutral-400">
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-6 py-5 text-center">
+        <div className="mx-auto w-full max-w-[220px] h-24 rounded-xl border border-dashed border-neutral-300 dark:border-neutral-600 bg-neutral-50 dark:bg-neutral-800 flex items-center justify-center text-[11px] text-neutral-400 dark:text-neutral-500">
           Photo
         </div>
-        <p className="text-lg font-bold text-neutral-900 mt-3">{weapon.name}</p>
+        <p className="text-lg font-bold text-neutral-900 dark:text-neutral-100 mt-3">{weapon.name}</p>
         <div className="flex items-center justify-center gap-2 mt-2">
-          <span className="text-xs bg-neutral-100 text-neutral-600 px-2.5 py-1 rounded-full">{weapon.caliber}</span>
-          <span className="text-xs bg-neutral-100 text-neutral-600 px-2.5 py-1 rounded-full capitalize">{weapon.type}</span>
+          <span className="text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 px-2.5 py-1 rounded-full">{weapon.caliber}</span>
+          <span className="text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 px-2.5 py-1 rounded-full capitalize">{weapon.type}</span>
         </div>
         {firedTotal > 0 && (
           <p className="text-xs font-semibold text-red-600 mt-2">{firedTotal.toLocaleString()} RDS total this session</p>
         )}
         {firedTotal > 0 && (
-          <button type="button" onClick={() => setShowBreakdown(v => !v)} className="mt-1 text-xs text-neutral-500 hover:text-neutral-700 underline cursor-pointer">
+          <button type="button" onClick={() => setShowBreakdown(v => !v)} className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 underline cursor-pointer">
             {showBreakdown ? 'Hide breakdown' : 'Show breakdown'}
           </button>
         )}
@@ -1154,7 +1154,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
               for (const s of strings) if (s.weaponId === weapon.id) byAmmo.set(s.ammoTypeId, (byAmmo.get(s.ammoTypeId) ?? 0) + s.rounds)
               return [...byAmmo.entries()].map(([aid, rounds]) => {
                 const t = typeForId(aid)
-                return <span key={aid} className="text-xs bg-neutral-100 text-neutral-700 px-2.5 py-1 rounded-full border border-neutral-200">{t?.name ?? `Type #${aid}`} · {rounds} RDS</span>
+                return <span key={aid} className="text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 px-2.5 py-1 rounded-full border border-neutral-200 dark:border-neutral-700">{t?.name ?? `Type #${aid}`} · {rounds} RDS</span>
               })
             })()}
           </div>
@@ -1166,7 +1166,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
           <span>{toast}</span>
         </div>
       )}
-      <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+      <div className="mt-3 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 p-3">
         <div className="mb-3">
           {inventoryItems.length > 1 ? (
             <div className="flex flex-wrap justify-center gap-2">
@@ -1176,21 +1176,21 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
                 return (
                   <button type="button" key={it.ammoTypeId}
                     onClick={() => { setAmmoTypeId(it.ammoTypeId); setRounds(0) }}
-                    className={`px-3 py-1.5 rounded-full border text-sm cursor-pointer ${sel ? 'bg-black text-white border-black' : 'bg-white text-neutral-700 border-neutral-200 hover:bg-white'}`}>
+                    className={`px-3 py-1.5 rounded-full border text-sm cursor-pointer ${sel ? 'bg-black text-white border-black' : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700 hover:bg-white dark:hover:bg-neutral-800'}`}>
                     {t?.name ?? `Type #${it.ammoTypeId}`} · {it.rounds}
                   </button>
                 )
               })}
             </div>
           ) : inventoryItems.length === 0 ? (
-            <p className="text-sm text-neutral-500 text-center">{stage === 'load' ? 'No matching ammo in the bag.' : 'Nothing loaded.'}</p>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center">{stage === 'load' ? 'No matching ammo in the bag.' : 'Nothing loaded.'}</p>
           ) : null}
         </div>
         {stage === 'shoot' && (() => {
           const active = typeForId(selectedTypeId)
           return active ? (
             <div className="flex items-center justify-center gap-2 mb-3">
-              <span className="text-xs font-semibold tracking-wide text-neutral-500 uppercase">Ammo</span>
+              <span className="text-xs font-semibold tracking-wide text-neutral-500 dark:text-neutral-400 uppercase">Ammo</span>
               <span className="text-xs bg-black text-white px-3 py-1 rounded-full font-medium">{active.name}</span>
             </div>
           ) : null
@@ -1211,20 +1211,20 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
         <>
           <div className="flex items-center justify-center gap-4 mt-4">
             <button type="button" onClick={() => step(-1)} disabled={rounds <= 0}
-              className="w-12 h-12 flex items-center justify-center border rounded-xl text-xl hover:bg-neutral-50 cursor-pointer disabled:opacity-40">−</button>
+              className="w-12 h-12 flex items-center justify-center border rounded-xl text-xl hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40">−</button>
             <input type="number" min="0" value={rounds} inputMode="numeric" onChange={e => setRoundsClamped(Number(e.target.value))}
-              className="w-24 text-center text-3xl font-bold text-neutral-900 border-0 focus:outline-none" />
+              className="w-24 text-center text-3xl font-bold text-neutral-900 dark:text-neutral-100 border-0 focus:outline-none" />
             <button type="button" onClick={() => step(1)} disabled={rounds >= cap}
-              className="w-12 h-12 flex items-center justify-center border rounded-xl text-xl hover:bg-neutral-50 cursor-pointer disabled:opacity-40">+</button>
+              className="w-12 h-12 flex items-center justify-center border rounded-xl text-xl hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40">+</button>
           </div>
           <div className="flex flex-wrap justify-center gap-2 mt-3">
             {[5, 10, 50].map(n => (
               <button type="button" key={n} onClick={() => setRoundsClamped(rounds + n)} disabled={rounds + n > cap}
-                className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40">+{n}</button>
+                className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40">+{n}</button>
             ))}
             {cap > 0 && (
               <button type="button" onClick={() => setRoundsClamped(cap)}
-                className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">All</button>
+                className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">All</button>
             )}
           </div>
           {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
@@ -1239,7 +1239,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
               setToast(`Loaded ${lastLoad.quantity} RDS`)
               setTimeout(() => setToast(null), 2200)
             }} disabled={!canRedo}
-              className="w-full mt-2 py-2 bg-white border border-neutral-300 rounded-xl text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2">
+              className="w-full mt-2 py-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2">
               ↻ Redo last: {lastLoad.quantity} RDS {redoAmmo ? `· ${redoAmmo.name}` : ''}
             </button>
           )}
@@ -1247,7 +1247,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
         </>
       ) : (
         <>
-          <div className="flex mt-4 rounded-xl overflow-hidden border border-neutral-200">
+          <div className="flex mt-4 rounded-xl overflow-hidden border border-neutral-200 dark:border-neutral-700">
             <button type="button" onClick={() => act('shoot', true)}
               disabled={loadedForAmmo === 0}
               className="flex-1 py-5 bg-red-600 text-white text-lg font-bold hover:bg-red-700 cursor-pointer disabled:opacity-40 flex items-center justify-center">
@@ -1260,57 +1260,57 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
           </div>
           {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
           {showPartial && (
-            <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+            <div className="mt-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 p-3">
               <div className="flex items-center justify-center gap-4">
                 <button type="button" onClick={() => step(-1)} disabled={rounds <= 0}
-                  className="w-10 h-10 flex items-center justify-center border bg-white rounded-lg text-lg hover:bg-neutral-50 cursor-pointer disabled:opacity-40">−</button>
+                  className="w-10 h-10 flex items-center justify-center border bg-white dark:bg-neutral-900 rounded-lg text-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40">−</button>
                 <input type="number" min="0" value={rounds} inputMode="numeric" onChange={e => setRoundsClamped(Number(e.target.value))}
-                  className="w-20 text-center text-2xl font-bold text-neutral-900 border-0 bg-transparent focus:outline-none" />
+                  className="w-20 text-center text-2xl font-bold text-neutral-900 dark:text-neutral-100 border-0 bg-transparent focus:outline-none" />
                 <button type="button" onClick={() => step(1)} disabled={rounds >= cap}
-                  className="w-10 h-10 flex items-center justify-center border bg-white rounded-lg text-lg hover:bg-neutral-50 cursor-pointer disabled:opacity-40">+</button>
+                  className="w-10 h-10 flex items-center justify-center border bg-white dark:bg-neutral-900 rounded-lg text-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40">+</button>
               </div>
               <div className="flex flex-wrap justify-center gap-2 mt-3">
                 {[5, 10].map(n => (
                   <button type="button" key={n} onClick={() => setRoundsClamped(rounds + n)} disabled={rounds + n > cap}
-                    className="px-3 py-1.5 border bg-white rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40">+{n}</button>
+                    className="px-3 py-1.5 border bg-white dark:bg-neutral-900 rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40">+{n}</button>
                 ))}
                 <button type="button" onClick={() => setRoundsClamped(cap)}
-                  className="px-3 py-1.5 border bg-white rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">All</button>
+                  className="px-3 py-1.5 border bg-white dark:bg-neutral-900 rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">All</button>
               </div>
               <input type="text" placeholder="Note for this string (optional)" value={note}
-                onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm w-full mt-3 bg-white" />
+                onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm w-full mt-3 bg-white dark:bg-neutral-900" />
               <div className="flex gap-2 mt-3">
                 <button type="button" onClick={() => act('shoot')}
                   disabled={rounds === 0 || loadedForAmmo === 0}
                   className="flex-1 py-3 bg-red-600 text-white rounded-xl text-base font-bold hover:bg-red-700 cursor-pointer disabled:opacity-40">Shoot {rounds > 0 ? `${rounds} RDS` : ''}</button>
                 <button type="button" onClick={endRound}
-                  className="px-4 py-3 border border-neutral-300 bg-white rounded-xl text-sm hover:bg-neutral-50 cursor-pointer">End Round</button>
+                  className="px-4 py-3 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 rounded-xl text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">End Round</button>
               </div>
             </div>
           )}
           {!showPartial && (
             <button type="button" onClick={endRound}
-              className="w-full mt-3 py-3 border border-neutral-300 rounded-xl text-sm hover:bg-neutral-50 cursor-pointer">End Round — return {remainingTotal} to bag</button>
+              className="w-full mt-3 py-3 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">End Round — return {remainingTotal} to bag</button>
           )}
         </>
       )}
     </div>
     {showEndDialog && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div className="bg-white rounded-xl border border-neutral-200 p-5 max-w-sm w-full">
-          <h3 className="text-base font-semibold text-neutral-900">End round?</h3>
-          <p className="text-sm text-neutral-600 mt-2">You have <span className="font-semibold">{remainingTotal}</span> round(s) still in {weapon.name}. Return them to your bag?</p>
+        <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 p-5 max-w-sm w-full">
+          <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">End round?</h3>
+          <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-2">You have <span className="font-semibold">{remainingTotal}</span> round(s) still in {weapon.name}. Return them to your bag?</p>
           {remainingEntries.length > 0 && (
             <ul className="mt-3 space-y-1">
               {remainingEntries.map(g => {
                 const t = typeForId(g.ammoTypeId)
-                return <li key={g.ammoTypeId} className="text-sm text-neutral-600 flex justify-between"><span>{t?.name ?? `Type #${g.ammoTypeId}`}</span><span className="font-medium">{g.rounds}</span></li>
+                return <li key={g.ammoTypeId} className="text-sm text-neutral-600 dark:text-neutral-400 flex justify-between"><span>{t?.name ?? `Type #${g.ammoTypeId}`}</span><span className="font-medium">{g.rounds}</span></li>
               })}
             </ul>
           )}
-          {firedTotal > 0 && <p className="text-xs text-neutral-400 mt-3">You've fired {firedTotal} round(s) so far this session.</p>}
+          {firedTotal > 0 && <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-3">You've fired {firedTotal} round(s) so far this session.</p>}
           <div className="flex gap-2 mt-4">
-            <button type="button" onClick={() => setShowEndDialog(false)} className="flex-1 px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Cancel</button>
+            <button type="button" onClick={() => setShowEndDialog(false)} className="flex-1 px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">Cancel</button>
             <button type="button" onClick={confirmEndRound} className="flex-1 px-3 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">Return to bag</button>
           </div>
         </div>
@@ -1332,7 +1332,7 @@ function QuickAdd({ rounds, cap, onChange, onStep, onMax, steps = [5, 10, 30], s
   step?: number
   inline?: boolean
 }) {
-  const chip = "px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+  const chip = "px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
   if (inline) {
     return (
       <div className="flex flex-wrap items-center gap-2">
@@ -1355,23 +1355,23 @@ function QuickAdd({ rounds, cap, onChange, onStep, onMax, steps = [5, 10, 30], s
       <div className="flex flex-wrap gap-2">
         {steps.map(n => (
           <button type="button" key={n} onClick={() => onChange(rounds + n)} disabled={rounds + n > cap}
-            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+{n}</button>
+            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+{n}</button>
         ))}
         {onMax && (
           <button type="button" onClick={onMax} disabled={cap === 0}
-            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">All</button>
+            className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">All</button>
         )}
       </div>
       <div className="flex items-center gap-1 mt-2">
         <button type="button" onClick={() => onStep(-step)} disabled={rounds <= 0}
-          className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">−</button>
+          className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">−</button>
         <input type="number" min="0" value={rounds} inputMode="numeric"
           onChange={e => onChange(Number(e.target.value))}
           className="w-16 px-2 py-1.5 border rounded-lg text-sm text-center" />
         <button type="button" onClick={() => onStep(step)} disabled={rounds >= cap}
-          className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+          className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+</button>
       </div>
-      {rounds === 0 && <p className="text-xs text-neutral-400 mt-1">No rounds selected</p>}
+      {rounds === 0 && <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">No rounds selected</p>}
     </div>
   )
 }
@@ -1412,16 +1412,16 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-neutral-200 p-5 max-w-md w-full">
-        <h3 className="text-base font-semibold text-neutral-900">Add Ammo</h3>
-        <p className="text-sm text-neutral-500 mt-1">{caption}</p>
+      <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 p-5 max-w-md w-full">
+        <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">Add Ammo</h3>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{caption}</p>
 
         <div className="mt-3 space-y-2 max-h-72 overflow-y-auto">
           {ammoTypes.map(t => (
             <div key={t.id} className="flex items-center justify-between gap-2">
               <div className="text-sm">
                 <p className="font-medium">{t.name}</p>
-                <p className="text-xs text-neutral-400">{t.caliber}</p>
+                <p className="text-xs text-neutral-400 dark:text-neutral-500">{t.caliber}</p>
               </div>
               <div className="flex items-center gap-1">
                 <input type="text" inputMode="numeric" pattern="[0-9]*" value={qty[t.id] ?? ''} placeholder="qty"
@@ -1431,7 +1431,7 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
                   }}
                   className="w-16 px-2 py-1 border rounded-lg text-sm text-right" />
                 <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400 text-sm pointer-events-none">$</span>
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-neutral-500 text-sm pointer-events-none">$</span>
                   <input type="text" inputMode="decimal" value={price[t.id] ?? ''} placeholder="0.00"
                     onChange={e => {
                       let v = e.target.value.replace(/[^0-9.]/g, '')
@@ -1449,9 +1449,9 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
           {newTypes.length > 0 && (
             <div className="pt-1 space-y-1">
               {newTypes.map((nt, i) => (
-                <div key={i} className="flex items-center justify-between text-sm bg-neutral-50 rounded-lg px-3 py-2">
-                  <span className="font-medium">{nt.name} <span className="text-neutral-400 font-normal">· {nt.caliber}</span></span>
-                  <span className="text-neutral-500">{nt.quantity} · {nt.price ? `$${Number(nt.price).toFixed(2)}` : '—'}</span>
+                <div key={i} className="flex items-center justify-between text-sm bg-neutral-50 dark:bg-neutral-800 rounded-lg px-3 py-2">
+                  <span className="font-medium">{nt.name} <span className="text-neutral-400 dark:text-neutral-500 font-normal">· {nt.caliber}</span></span>
+                  <span className="text-neutral-500 dark:text-neutral-400">{nt.quantity} · {nt.price ? `$${Number(nt.price).toFixed(2)}` : '—'}</span>
                 </div>
               ))}
             </div>
@@ -1473,7 +1473,7 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
               <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="Qty" value={draft.quantity}
                 onChange={e => setDraft(d => ({ ...d, quantity: e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') }))} className="px-2 py-1 border rounded text-sm w-20" />
               <div className="relative w-20">
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400 text-sm pointer-events-none">$</span>
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-neutral-500 text-sm pointer-events-none">$</span>
                 <input type="text" inputMode="decimal" placeholder="0.00" value={draft.price}
                   onChange={e => {
                     let v = e.target.value.replace(/[^0-9.]/g, '')
@@ -1488,13 +1488,13 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
               <button type="button" onClick={addNewType}
                 className="flex-1 px-2 py-1.5 bg-black text-white rounded-lg text-sm cursor-pointer hover:opacity-80">Add</button>
               <button type="button" onClick={() => setShowNew(false)}
-                className="px-2 py-1.5 border rounded-lg text-sm cursor-pointer hover:bg-neutral-50">Cancel</button>
+                className="px-2 py-1.5 border rounded-lg text-sm cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">Cancel</button>
             </div>
           </div>
         )}
         {!showNew && (
           <button type="button" onClick={() => setShowNew(true)}
-            className="text-sm text-neutral-600 mt-3 cursor-pointer hover:text-neutral-900">+ Add a new ammo type</button>
+            className="text-sm text-neutral-600 dark:text-neutral-400 mt-3 cursor-pointer hover:text-neutral-900 dark:text-neutral-100">+ Add a new ammo type</button>
         )}
 
         <input type="text" placeholder="Note (optional)" value={note}
@@ -1502,7 +1502,7 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
 
         <div className="flex gap-2 mt-4">
           <button type="button" onClick={onClose}
-            className="flex-1 px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Cancel</button>
+            className="flex-1 px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">Cancel</button>
           <button type="button" onClick={submit}
             className="flex-1 px-3 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">Add</button>
         </div>
@@ -1630,7 +1630,7 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
       {showEndModal && (
         <ConfirmEndModal bag={bag} strings={strings} weapons={weapons} ammoTypes={ammoTypes}
           onConfirm={handleEnd} onCancel={() => setShowEndModal(false)} />
@@ -1642,12 +1642,12 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
           onSubmit={handleAddAmmo} onClose={() => setShowAcquire(false)} />
       )}
 
-      <header className="border-b border-neutral-200 bg-white">
+      <header className="border-b border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
         <div className="mx-auto max-w-4xl flex items-center justify-between px-6 h-16">
           <div className="flex items-center gap-3">
-            <button onClick={onBack} className="text-neutral-400 hover:text-neutral-700 cursor-pointer">← Back</button>
+            <button onClick={onBack} className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer">← Back</button>
             <h1 className="text-lg font-bold tracking-tight">Range Day</h1>
-            {session.note && <span className="text-neutral-500 text-sm">· {session.note}</span>}
+            {session.note && <span className="text-neutral-500 dark:text-neutral-400 text-sm">· {session.note}</span>}
             <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-medium">Active</span>
           </div>
           <button onClick={() => setShowEndModal(true)}
@@ -1662,7 +1662,7 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
         <section>
           <h2 className="text-lg font-semibold mb-3">Weapons</h2>
           {weapons.length === 0 ? (
-            <p className="text-neutral-400 text-sm">No weapons selected for this range day.</p>
+            <p className="text-neutral-400 dark:text-neutral-500 text-sm">No weapons selected for this range day.</p>
           ) : (
             (() => {
               const ordered = [...weapons].sort((a, b) => {
@@ -1687,12 +1687,12 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
                         {isActive ? (
                           <WeaponRangeCard weapon={w} bag={bag} ammoTypes={ammoTypes} gunLoaded={gunLoaded} strings={strings} onAction={doAction} typeForId={typeForId} lastLoad={lastLoadByWeapon[w.id] ?? null} onSetLastLoad={v => setLastLoadByWeapon(m => { const n = { ...m }; if (v) n[w.id] = v; else delete n[w.id]; return n })} />
                         ) : (
-                          <div className={`rounded-xl border p-3 flex items-center justify-between ${isOut ? 'border-red-200 bg-red-50 opacity-100' : isLoaded ? 'border-blue-200 bg-blue-50 opacity-100' : 'border-neutral-200 bg-white opacity-60 hover:opacity-100'}`}>
+                          <div className={`rounded-xl border p-3 flex items-center justify-between ${isOut ? 'border-red-200 bg-red-50 opacity-100' : isLoaded ? 'border-blue-200 bg-blue-50 opacity-100' : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 opacity-60 hover:opacity-100'}`}>
                             <div>
-                              <p className={`text-sm font-semibold ${isOut ? 'text-red-700' : isLoaded ? 'text-blue-700' : 'text-neutral-900'}`}>{w.name}</p>
-                              <p className={`text-xs ${isOut ? 'text-red-500' : isLoaded ? 'text-blue-600' : 'text-neutral-500'}`}>{w.caliber} · {w.type}{isOut ? ' · Out of ammo' : isLoaded ? ' · Loaded' : ''}</p>
+                              <p className={`text-sm font-semibold ${isOut ? 'text-red-700' : isLoaded ? 'text-blue-700' : 'text-neutral-900 dark:text-neutral-100'}`}>{w.name}</p>
+                              <p className={`text-xs ${isOut ? 'text-red-500' : isLoaded ? 'text-blue-600' : 'text-neutral-500 dark:text-neutral-400'}`}>{w.caliber} · {w.type}{isOut ? ' · Out of ammo' : isLoaded ? ' · Loaded' : ''}</p>
                             </div>
-                            <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${isOut ? 'bg-red-100 text-red-700 border-red-200' : isLoaded ? 'bg-blue-600 text-white border-blue-600' : 'bg-neutral-100 text-neutral-600 border-neutral-200'}`}>{isOut ? 'Out' : `${loadedForW} RDS`}</span>
+                            <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${isOut ? 'bg-red-100 text-red-700 border-red-200' : isLoaded ? 'bg-blue-600 text-white border-blue-600' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700'}`}>{isOut ? 'Out' : `${loadedForW} RDS`}</span>
                           </div>
                         )}
                       </div>
@@ -1712,28 +1712,28 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
               className="text-sm px-3 py-1.5 bg-black text-white rounded-lg hover:opacity-80 cursor-pointer">+ Buy More Ammo</button>
           </div>
           {bag.length === 0 ? (
-            <p className="text-neutral-400 text-sm">No ammo in bag.</p>
+            <p className="text-neutral-400 dark:text-neutral-500 text-sm">No ammo in bag.</p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-neutral-200 bg-white">
+            <div className="overflow-x-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-neutral-200 text-left text-neutral-500">
+                  <tr className="border-b border-neutral-200 dark:border-neutral-700 text-left text-neutral-500 dark:text-neutral-400">
                     <th className="px-4 py-3">Ammo Type</th>
                     <th className="px-4 py-3">Caliber</th>
                     <th className="px-4 py-3 text-right">Taken</th>
                     <th className="px-4 py-3 text-right">Acquired</th>
-                    <th className="px-4 py-3 text-right font-semibold text-neutral-700">In Bag</th>
+                    <th className="px-4 py-3 text-right font-semibold text-neutral-700 dark:text-neutral-300">In Bag</th>
                   </tr>
                 </thead>
                 <tbody>
                   {bag.map(b => {
                     const type = typeForId(b.ammoTypeId)
                     return (
-                      <tr key={b.ammoTypeId} className="border-b border-neutral-100 last:border-0">
+                      <tr key={b.ammoTypeId} className="border-b border-neutral-100 dark:border-neutral-800 last:border-0">
                         <td className="px-4 py-3 font-medium">{type?.name ?? `Type #${b.ammoTypeId}`}</td>
-                        <td className="px-4 py-3 text-neutral-500">{type?.caliber ?? '—'}</td>
-                        <td className="px-4 py-3 text-right text-neutral-600">{b.taken}</td>
-                        <td className="px-4 py-3 text-right text-neutral-600">{b.acquired}</td>
+                        <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{type?.caliber ?? '—'}</td>
+                        <td className="px-4 py-3 text-right text-neutral-600 dark:text-neutral-400">{b.taken}</td>
+                        <td className="px-4 py-3 text-right text-neutral-600 dark:text-neutral-400">{b.acquired}</td>
                         <td className={`px-4 py-3 text-right font-bold ${balanceColor(b.inBag)}`}>{b.inBag}</td>
                       </tr>
                     )
@@ -1748,23 +1748,23 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
         <section>
           <h2 className="text-lg font-semibold mb-3">Shooting Log</h2>
           {strings.length === 0 ? (
-            <p className="text-neutral-400 text-sm">No shots recorded yet.</p>
+            <p className="text-neutral-400 dark:text-neutral-500 text-sm">No shots recorded yet.</p>
           ) : (
-            <div className="divide-y divide-neutral-100 rounded-xl border border-neutral-200 bg-white">
+            <div className="divide-y divide-neutral-100 dark:divide-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
               {strings.slice().reverse().map(s => (
                 <div key={s.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="flex-1">
                     <p className="text-sm font-medium">
                       {weaponForId(s.weaponId)?.name ?? `Weapon #${s.weaponId}`}
-                      <span className="text-neutral-400 font-normal"> · {typeForId(s.ammoTypeId)?.name ?? `Type #${s.ammoTypeId}`}</span>
+                      <span className="text-neutral-400 dark:text-neutral-500 font-normal"> · {typeForId(s.ammoTypeId)?.name ?? `Type #${s.ammoTypeId}`}</span>
                     </p>
-                    <p className="text-xs text-neutral-400">
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500">
                       {s.rounds} rounds · {relativeTime(s.occurredAt)}
                       {s.note ? ` · ${s.note}` : ''}
                     </p>
                   </div>
                   <button onClick={() => deleteString(s.id)}
-                    className="text-xs text-neutral-400 hover:text-red-500 cursor-pointer">Delete</button>
+                    className="text-xs text-neutral-400 dark:text-neutral-500 hover:text-red-500 cursor-pointer">Delete</button>
                 </div>
               ))}
             </div>
@@ -1842,9 +1842,9 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryI
         const bagEntry = tx.entries
           .find(e => e.location === 'bag' && !e.isBalancing && e.ammoTypeId === item.id)
         const took = bagEntry ? Math.abs(bagEntry.quantity) : 0
-        return <span className="text-neutral-400 text-sm italic">moved {took} to bag</span>
+        return <span className="text-neutral-400 dark:text-neutral-500 text-sm italic">moved {took} to bag</span>
       }
-      return <span className="text-neutral-400 text-sm">—</span>
+      return <span className="text-neutral-400 dark:text-neutral-500 text-sm">—</span>
     }
     return (
       <span className={`font-semibold tabular-nums ${net > 0 ? 'text-green-700' : 'text-red-600'}`}>
@@ -1859,19 +1859,19 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryI
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={onBack}
-          className="text-sm text-neutral-500 hover:text-neutral-800 cursor-pointer transition-colors"
+          className="text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer transition-colors"
         >
           ← Inventory
         </button>
       </div>
 
       {/* Ammo type card */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm mb-8">
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-8">
         <div className="flex items-start justify-between flex-wrap gap-2">
           <div>
-            <h2 className="text-2xl font-bold text-neutral-900">{item.name}</h2>
-            <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500">
-              <span className="bg-neutral-100 px-2 py-0.5 rounded-full">{item.caliber}</span>
+            <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{item.name}</h2>
+            <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+              <span className="bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">{item.caliber}</span>
               {item.grain && <span>{item.grain}gr</span>}
               {item.brand && <span>· {item.brand}</span>}
               {item.description && <span>· {item.description}</span>}
@@ -1881,39 +1881,39 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryI
             <p className={`text-4xl font-bold ${balanceColor(item.balance)}`}>
               {item.balance.toLocaleString()}
             </p>
-            <p className="text-xs text-neutral-400 mt-0.5">rounds in storage</p>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">rounds in storage</p>
           </div>
         </div>
         {avgPrice && (
-          <div className="mt-4 pt-4 border-t border-neutral-100 flex gap-6 text-sm">
+          <div className="mt-4 pt-4 border-t border-neutral-100 dark:border-neutral-800 flex gap-6 text-sm">
             <div>
-              <p className="text-xs text-neutral-400 uppercase tracking-wide">Avg price / round</p>
-              <p className="font-semibold text-neutral-900 tabular-nums">${avgPrice.perRound.toFixed(2)}</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Avg price / round</p>
+              <p className="font-semibold text-neutral-900 dark:text-neutral-100 tabular-nums">${avgPrice.perRound.toFixed(2)}</p>
             </div>
             <div>
-              <p className="text-xs text-neutral-400 uppercase tracking-wide">Total tracked</p>
-              <p className="font-medium text-neutral-600 tabular-nums">{avgPrice.totalRounds.toLocaleString()} rds · ${(avgPrice.totalCents / 100).toFixed(2)}</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Total tracked</p>
+              <p className="font-medium text-neutral-600 dark:text-neutral-400 tabular-nums">{avgPrice.totalRounds.toLocaleString()} rds · ${(avgPrice.totalCents / 100).toFixed(2)}</p>
             </div>
           </div>
         )}
       </div>
 
       {/* Transaction history */}
-      <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">
+      <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-3">
         Transaction History
       </h3>
 
       {loading ? (
-        <p className="text-neutral-400 text-sm">Loading...</p>
+        <p className="text-neutral-400 dark:text-neutral-500 text-sm">Loading...</p>
       ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-neutral-200 p-8 text-center">
-          <p className="text-neutral-400 text-sm">No transactions yet for this ammo type.</p>
+        <div className="rounded-xl border border-dashed border-neutral-200 dark:border-neutral-700 p-8 text-center">
+          <p className="text-neutral-400 dark:text-neutral-500 text-sm">No transactions yet for this ammo type.</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden shadow-sm">
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 overflow-hidden shadow-sm">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-100 text-left text-xs text-neutral-400 uppercase tracking-wide">
+              <tr className="border-b border-neutral-100 dark:border-neutral-800 text-left text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Note</th>
@@ -1924,8 +1924,8 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryI
             </thead>
             <tbody>
               {rows.map(({ tx, net, runningBalance }) => (
-                <tr key={tx.id} className="border-b border-neutral-50 last:border-0 hover:bg-neutral-50 transition-colors">
-                  <td className="px-4 py-3 text-neutral-500 whitespace-nowrap">
+                <tr key={tx.id} className="border-b border-neutral-50 last:border-0 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
+                  <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400 whitespace-nowrap">
                     {new Date(tx.occurredAt).toLocaleDateString(undefined, {
                       month: 'short', day: 'numeric', year: 'numeric',
                     })}
@@ -1935,14 +1935,14 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryI
                       {txLabel(tx.type)}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-neutral-600 max-w-[200px] truncate">
+                  <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400 max-w-[200px] truncate">
                     {tx.note ?? <span className="text-neutral-300">—</span>}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
                     {tx.price != null ? (
-                      <span className="text-neutral-700">
+                      <span className="text-neutral-700 dark:text-neutral-300">
                         ${(tx.price / 100).toFixed(2)}
-                        {net > 0 && <span className="text-neutral-400 text-xs ml-1">(${(tx.price / net / 100).toFixed(2)}/rd)</span>}
+                        {net > 0 && <span className="text-neutral-400 dark:text-neutral-500 text-xs ml-1">(${(tx.price / net / 100).toFixed(2)}/rd)</span>}
                       </span>
                     ) : (
                       <span className="text-neutral-300">—</span>
@@ -1951,7 +1951,7 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryI
                   <td className="px-4 py-3 text-right">
                     {netLabel(net, tx)}
                   </td>
-                  <td className="px-4 py-3 text-right font-medium tabular-nums text-neutral-700">
+                  <td className="px-4 py-3 text-right font-medium tabular-nums text-neutral-700 dark:text-neutral-300">
                     {runningBalance.toLocaleString()}
                   </td>
                 </tr>
@@ -2020,18 +2020,18 @@ function CaliberDetailView({ group, refreshKey = 0, onBack }: { group: CaliberGr
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={onBack}
-          className="text-sm text-neutral-500 hover:text-neutral-800 cursor-pointer transition-colors"
+          className="text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer transition-colors"
         >
           ← Inventory
         </button>
       </div>
 
       {/* Caliber summary card */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm mb-6">
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-6">
         <div className="flex items-start justify-between flex-wrap gap-2">
           <div>
-            <h2 className="text-2xl font-bold text-neutral-900">{group.caliber}</h2>
-            <p className="text-sm text-neutral-500 mt-1">
+            <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{group.caliber}</h2>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
               {group.items.length} ammo type{group.items.length !== 1 ? 's' : ''}
             </p>
           </div>
@@ -2039,7 +2039,7 @@ function CaliberDetailView({ group, refreshKey = 0, onBack }: { group: CaliberGr
             <p className={`text-4xl font-bold ${balanceColor(group.totalBalance)}`}>
               {group.totalBalance.toLocaleString()}
             </p>
-            <p className="text-xs text-neutral-400 mt-0.5">total rounds in storage</p>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">total rounds in storage</p>
           </div>
         </div>
       </div>
@@ -2050,36 +2050,36 @@ function CaliberDetailView({ group, refreshKey = 0, onBack }: { group: CaliberGr
           <button
             key={item.id}
             onClick={() => setViewingItem(item)}
-            className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm text-left hover:border-neutral-400 hover:shadow-md transition-all cursor-pointer group"
+            className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-sm text-left hover:border-neutral-400 hover:shadow-md transition-all cursor-pointer group"
           >
-            <p className="text-sm font-medium text-neutral-700 truncate group-hover:text-neutral-900">{item.name}</p>
+            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 truncate group-hover:text-neutral-900 dark:group-hover:text-neutral-100">{item.name}</p>
             {(item.grain || item.brand) && (
-              <p className="text-xs text-neutral-400 mt-0.5 truncate">
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5 truncate">
                 {[item.grain ? `${item.grain}gr` : null, item.brand].filter(Boolean).join(' · ')}
               </p>
             )}
             <p className={`text-2xl font-bold mt-2 ${balanceColor(item.balance)}`}>{item.balance.toLocaleString()}</p>
-            <p className="text-xs text-neutral-400 mt-0.5">rounds · tap for history</p>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">rounds · tap for history</p>
           </button>
         ))}
       </div>
 
       {/* Merged transaction history */}
-      <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">
+      <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-3">
         Transaction History
       </h3>
 
       {loading ? (
-        <p className="text-neutral-400 text-sm">Loading...</p>
+        <p className="text-neutral-400 dark:text-neutral-500 text-sm">Loading...</p>
       ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-neutral-200 p-8 text-center">
-          <p className="text-neutral-400 text-sm">No transactions yet for this caliber.</p>
+        <div className="rounded-xl border border-dashed border-neutral-200 dark:border-neutral-700 p-8 text-center">
+          <p className="text-neutral-400 dark:text-neutral-500 text-sm">No transactions yet for this caliber.</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden shadow-sm">
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 overflow-hidden shadow-sm">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-100 text-left text-xs text-neutral-400 uppercase tracking-wide">
+              <tr className="border-b border-neutral-100 dark:border-neutral-800 text-left text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Note</th>
@@ -2089,8 +2089,8 @@ function CaliberDetailView({ group, refreshKey = 0, onBack }: { group: CaliberGr
             </thead>
             <tbody>
               {rows.map(({ tx, net, runningBalance }) => (
-                <tr key={tx.id} className="border-b border-neutral-50 last:border-0 hover:bg-neutral-50 transition-colors">
-                  <td className="px-4 py-3 text-neutral-500 whitespace-nowrap">
+                <tr key={tx.id} className="border-b border-neutral-50 last:border-0 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
+                  <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400 whitespace-nowrap">
                     {new Date(tx.occurredAt).toLocaleDateString(undefined, {
                       month: 'short', day: 'numeric', year: 'numeric',
                     })}
@@ -2100,12 +2100,12 @@ function CaliberDetailView({ group, refreshKey = 0, onBack }: { group: CaliberGr
                       {txLabel(tx.type)}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-neutral-600 max-w-[200px] truncate">
+                  <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400 max-w-[200px] truncate">
                     {tx.note ?? <span className="text-neutral-300">—</span>}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {net === 0
-                      ? <span className="text-neutral-400 text-sm">—</span>
+                      ? <span className="text-neutral-400 dark:text-neutral-500 text-sm">—</span>
                       : (
                         <span className={`font-semibold tabular-nums ${net > 0 ? 'text-green-700' : 'text-red-600'}`}>
                           {net > 0 ? `+${net.toLocaleString()}` : net.toLocaleString()}
@@ -2113,7 +2113,7 @@ function CaliberDetailView({ group, refreshKey = 0, onBack }: { group: CaliberGr
                       )
                     }
                   </td>
-                  <td className="px-4 py-3 text-right font-medium tabular-nums text-neutral-700">
+                  <td className="px-4 py-3 text-right font-medium tabular-nums text-neutral-700 dark:text-neutral-300">
                     {runningBalance.toLocaleString()}
                   </td>
                 </tr>
@@ -2158,7 +2158,7 @@ function NewWeaponForm({ onSuccess, onClose }: { onSuccess: () => void; onClose:
         onChange={e => setName(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
       <CaliberSelect value={caliber} onChange={setCaliber} />
       <select value={type} onChange={e => setType(e.target.value)}
-        className="px-3 py-2 border rounded-lg text-sm">
+        className="px-3 py-2 border rounded-lg text-sm bg-white dark:bg-neutral-900">
         <option value="handgun">Handgun</option>
         <option value="rifle">Rifle</option>
         <option value="shotgun">Shotgun</option>
@@ -2169,7 +2169,7 @@ function NewWeaponForm({ onSuccess, onClose }: { onSuccess: () => void; onClose:
         onChange={e => setNotes(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
       <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="Initial rounds fired before tracking (optional)" value={initialRounds}
         onChange={e => setInitialRounds(e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, ''))} className="px-3 py-2 border rounded-lg text-sm" />
-      <p className="text-[11px] text-neutral-400 -mt-2">If you already know this gun has e.g. 500 rounds, set it here. It will count toward total and cleaning due.</p>
+      <p className="text-[11px] text-neutral-400 dark:text-neutral-500 -mt-2">If you already know this gun has e.g. 500 rounds, set it here. It will count toward total and cleaning due.</p>
       {error && <p className="text-red-500 text-sm">{error}</p>}
       <button type="submit" className="px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">Create</button>
     </form>
@@ -2185,6 +2185,8 @@ function CleaningModal({ weapon, totalRounds, cleanings, onClose, onSaved }: {
   const [customRounds, setCustomRounds] = useState(false)
   const [customDays, setCustomDays] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [note, setNote] = useState('')
+  const [logging, setLogging] = useState(false)
 
   const baselineRounds = latest?.roundCountAtCleaning ?? 0
   const baselineDate = latest ? new Date(latest.cleanedAt) : new Date(weapon.createdAt)
@@ -2211,44 +2213,56 @@ function CleaningModal({ weapon, totalRounds, cleanings, onClose, onSaved }: {
     onClose()
   }
 
-  const chip = (active: boolean) => `px-2.5 py-1 rounded-full text-xs border cursor-pointer ${active ? 'bg-black text-white border-black' : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-400'}`
+  const logNow = async () => {
+    setLogging(true)
+    const res = await apiFetch(`/weapons/${weapon.id}/cleanings`, {
+      method: 'POST',
+      body: JSON.stringify({ roundCountAtCleaning: totalRounds, note: note || null }),
+    })
+    setLogging(false)
+    if (!res.ok) { const d = await res.json(); alert(d.error || 'Error'); return }
+    setNote('')
+    await onSaved()
+  }
+
+  const chip = (active: boolean) => `px-2.5 py-1 rounded-full text-xs border cursor-pointer ${active ? 'bg-black text-white border-black' : 'bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400'}`
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-neutral-200 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 max-w-lg w-full max-h-[90vh] overflow-y-auto">
         <div className="p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold text-neutral-900">Cleaning — {weapon.name}</h3>
-              <p className="text-xs text-neutral-400 mt-1">{weapon.type} · {weapon.caliber} · {totalRounds.toLocaleString()} rds fired</p>
+              <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">Cleaning — {weapon.name}</h3>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">{weapon.type} · {weapon.caliber} · {totalRounds.toLocaleString()} rds fired</p>
             </div>
-            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 text-xl leading-none cursor-pointer">×</button>
+            <button onClick={onClose} className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 text-xl leading-none cursor-pointer">×</button>
           </div>
 
-          <div className="mt-4 rounded-lg bg-neutral-50 border border-neutral-200 p-3">
+          <div className="mt-4 rounded-lg bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 p-3">
             <div className="flex justify-between text-xs">
-              <span className="text-neutral-500">Since clean: <span className="font-semibold text-neutral-900">{roundsSince.toLocaleString()} rds</span> · {daysSince}d</span>
-              <span className={overdue ? 'text-red-600 font-semibold' : 'text-neutral-500'}>
+              <span className="text-neutral-500 dark:text-neutral-400">Since clean: <span className="font-semibold text-neutral-900 dark:text-neutral-100">{roundsSince.toLocaleString()} rds</span> · {daysSince}d</span>
+              <span className={overdue ? 'text-red-600 font-semibold' : 'text-neutral-500 dark:text-neutral-400'}>
                 {overdue ? `Overdue by ${dueRounds != null && dueRounds <= 0 ? Math.abs(dueRounds) + ' rds' : ''}${dueRounds != null && dueRounds <= 0 && dueDays != null && dueDays <= 0 ? ' · ' : ''}${dueDays != null && dueDays <= 0 ? Math.abs(dueDays) + 'd' : ''}` : `${dueRounds != null ? `Due in ${dueRounds} rds` : ''}${dueRounds != null && dueDays != null ? ' · ' : ''}${dueDays != null ? `in ${dueDays}d` : ''}${dueRounds == null && dueDays == null ? 'No interval set' : ''}`}
               </span>
             </div>
             {rInt != null && (
               <div className="mt-2">
-                <div className="flex justify-between text-[11px] text-neutral-400 mb-1"><span>Rounds</span><span>{roundsSince}/{rInt}</span></div>
-                <div className="h-2 bg-neutral-200 rounded-full overflow-hidden"><div className={`h-full ${overdue && dueRounds != null && dueRounds <= 0 ? 'bg-red-500' : 'bg-neutral-900'}`} style={{ width: `${pctRounds}%` }} /></div>
+                <div className="flex justify-between text-[11px] text-neutral-400 dark:text-neutral-500 mb-1"><span>Rounds</span><span>{roundsSince}/{rInt}</span></div>
+                <div className="h-2 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden"><div className={`h-full ${overdue && dueRounds != null && dueRounds <= 0 ? 'bg-red-500' : 'bg-neutral-900 dark:bg-neutral-100'}`} style={{ width: `${pctRounds}%` }} /></div>
               </div>
             )}
             {dInt != null && (
               <div className="mt-2">
-                <div className="flex justify-between text-[11px] text-neutral-400 mb-1"><span>Time</span><span>{daysSince}/{dInt}d</span></div>
-                <div className="h-2 bg-neutral-200 rounded-full overflow-hidden"><div className={`h-full ${overdue && dueDays != null && dueDays <= 0 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${pctDays}%` }} /></div>
+                <div className="flex justify-between text-[11px] text-neutral-400 dark:text-neutral-500 mb-1"><span>Time</span><span>{daysSince}/{dInt}d</span></div>
+                <div className="h-2 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden"><div className={`h-full ${overdue && dueDays != null && dueDays <= 0 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${pctDays}%` }} /></div>
               </div>
             )}
-            <p className="text-[11px] text-neutral-400 mt-2">Last: {latest ? `${new Date(latest.cleanedAt).toLocaleDateString()} @ ${latest.roundCountAtCleaning.toLocaleString()} rds` : `Never — since ${new Date(weapon.createdAt).toLocaleDateString()} @ 0 rds`}</p>
+            <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-2">Last: {latest ? `${new Date(latest.cleanedAt).toLocaleDateString()} @ ${latest.roundCountAtCleaning.toLocaleString()} rds` : `Never — since ${new Date(weapon.createdAt).toLocaleDateString()} @ 0 rds`}</p>
           </div>
 
           <div className="mt-5">
-            <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Interval — rounds</p>
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Interval — rounds</p>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {[250, 500, 1000].map(n => (
                 <button key={n} type="button" onClick={() => { setIntervalRounds(String(n)); setCustomRounds(false) }} className={chip(intervalRounds === String(n))}>{n}</button>
@@ -2262,7 +2276,7 @@ function CleaningModal({ weapon, totalRounds, cleanings, onClose, onSaved }: {
           </div>
 
           <div className="mt-4">
-            <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Interval — time</p>
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Interval — time</p>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {[30, 90, 180, 365].map(n => (
                 <button key={n} type="button" onClick={() => { setIntervalDays(String(n)); setCustomDays(false) }} className={chip(intervalDays === String(n))}>{n}d</button>
@@ -2273,19 +2287,24 @@ function CleaningModal({ weapon, totalRounds, cleanings, onClose, onSaved }: {
             {customDays && (
               <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="e.g. 60" value={intervalDays} onChange={e => setIntervalDays(e.target.value.replace(/\D/g, ''))} className="mt-2 w-32 px-2 py-1 border rounded text-sm" />
             )}
-            <p className="text-[11px] text-neutral-400 mt-1">Quick chips: 30d / 90d (3mo) / 180d / 365d</p>
+            <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-1">Quick chips: 30d / 90d (3mo) / 180d / 365d</p>
           </div>
 
-          <p className="text-[11px] text-neutral-400 mt-4">Log cleaning is now a separate action — use the “Log Cleaning” button on the weapon card.</p>
+          <div className="mt-5 pt-5 border-t border-neutral-100 dark:border-neutral-800">
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Log a cleaning</p>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">Records a cleaning now at <span className="font-semibold">{totalRounds.toLocaleString()} RDS</span>.</p>
+            <input type="text" placeholder="Note (optional)" value={note} onChange={e => setNote(e.target.value)} className="mt-2 w-full px-3 py-2 border rounded-lg text-sm" />
+            <button type="button" onClick={logNow} disabled={logging} className="mt-2 w-full px-4 py-3 bg-blue-600 text-white rounded-xl text-base font-semibold hover:bg-blue-700 disabled:opacity-40 cursor-pointer">{logging ? 'Logging…' : 'Log Cleaning'}</button>
+          </div>
 
           {cleanings.length > 0 && (
             <div className="mt-5">
-              <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">History ({cleanings.length})</p>
+              <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">History ({cleanings.length})</p>
               <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
                 {cleanings.map(c => (
-                  <div key={c.id} className="flex justify-between items-center text-sm border border-neutral-100 rounded-lg px-3 py-2">
-                    <span className="text-neutral-700">{new Date(c.cleanedAt).toLocaleDateString()} <span className="text-neutral-400">@ {c.roundCountAtCleaning.toLocaleString()} rds</span></span>
-                    <span className="text-xs text-neutral-400 truncate max-w-[120px]">{c.note ?? ''}</span>
+                  <div key={c.id} className="flex justify-between items-center text-sm border border-neutral-100 dark:border-neutral-800 rounded-lg px-3 py-2">
+                    <span className="text-neutral-700 dark:text-neutral-300">{new Date(c.cleanedAt).toLocaleDateString()} <span className="text-neutral-400 dark:text-neutral-500">@ {c.roundCountAtCleaning.toLocaleString()} rds</span></span>
+                    <span className="text-xs text-neutral-400 dark:text-neutral-500 truncate max-w-[120px]">{c.note ?? ''}</span>
                   </div>
                 ))}
               </div>
@@ -2293,46 +2312,9 @@ function CleaningModal({ weapon, totalRounds, cleanings, onClose, onSaved }: {
           )}
 
           <div className="flex gap-2 mt-6">
-            <button type="button" onClick={onClose} className="flex-1 px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Cancel</button>
+            <button type="button" onClick={onClose} className="flex-1 px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">Cancel</button>
             <button type="button" onClick={saveIntervals} disabled={saving} className="flex-1 px-3 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 disabled:opacity-40 cursor-pointer">Save intervals</button>
           </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function LogCleaningModal({ weapon, totalRounds, onClose, onSaved }: {
-  weapon: Weapon; totalRounds: number; onClose: () => void; onSaved: () => void
-}) {
-  const [note, setNote] = useState('')
-  const [saving, setSaving] = useState(false)
-  const logNow = async () => {
-    setSaving(true)
-    const res = await apiFetch(`/weapons/${weapon.id}/cleanings`, {
-      method: 'POST',
-      body: JSON.stringify({ roundCountAtCleaning: totalRounds, note: note || null }),
-    })
-    setSaving(false)
-    if (!res.ok) { const d = await res.json(); alert(d.error || 'Error'); return }
-    onSaved()
-    onClose()
-  }
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl border border-neutral-200 max-w-md w-full p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold text-neutral-900">Log Cleaning — {weapon.name}</h3>
-            <p className="text-xs text-neutral-500 mt-1">{weapon.type} · {weapon.caliber} · {totalRounds.toLocaleString()} RDS</p>
-          </div>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 text-xl leading-none cursor-pointer">×</button>
-        </div>
-        <p className="text-sm text-neutral-600 mt-4">This will record a cleaning now at <span className="font-semibold">{totalRounds.toLocaleString()} RDS</span>. Exported with history.</p>
-        <input type="text" placeholder="Note (optional)" value={note} onChange={e => setNote(e.target.value)} className="mt-3 w-full px-3 py-2 border rounded-lg text-sm" />
-        <div className="flex gap-2 mt-4">
-          <button type="button" onClick={onClose} className="flex-1 px-3 py-2 border border-neutral-300 rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Cancel</button>
-          <button type="button" onClick={logNow} disabled={saving} className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-40 cursor-pointer">Log Cleaning</button>
         </div>
       </div>
     </div>
@@ -2349,7 +2331,6 @@ function WeaponManager({ weapons, onRefresh, onWeaponClick }: { weapons: Weapon[
   const [cleanings, setCleanings] = useState<Record<number, WeaponCleaning[]>>({})
   const [cleaningsLoading, setCleaningsLoading] = useState(true)
   const [cleaningWeapon, setCleaningWeapon] = useState<Weapon | null>(null)
-  const [logCleaningWeapon, setLogCleaningWeapon] = useState<Weapon | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -2420,7 +2401,7 @@ function WeaponManager({ weapons, onRefresh, onWeaponClick }: { weapons: Weapon[
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Your Weapons</h3>
+        <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Your Weapons</h3>
         <button onClick={() => setShowForm(s => !s)}
           className="text-sm px-3 py-1.5 bg-black text-white rounded-lg cursor-pointer hover:opacity-80">
           + New Weapon
@@ -2436,68 +2417,68 @@ function WeaponManager({ weapons, onRefresh, onWeaponClick }: { weapons: Weapon[
       {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
 
       {weapons.length === 0 ? (
-        <p className="text-sm text-neutral-500">No weapons yet.</p>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">No weapons yet.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
           {weapons.map(w => {
             const total = totals[w.id]
             return (
-              <div key={w.id} className="rounded-xl border border-neutral-200 bg-white shadow-sm p-5 flex flex-col h-full">
+              <div key={w.id} className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-sm p-5 flex flex-col h-full">
                 {editingId === w.id ? (
                   <div className="flex flex-col gap-2">
-                    <input value={editData.name ?? ''} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} className="px-2 py-1 border rounded text-sm" placeholder="Name" />
+                    <input value={editData.name ?? ''} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} className="px-2 py-1 border rounded text-sm bg-white dark:bg-neutral-900" placeholder="Name" />
                     <CaliberSelect value={editData.caliber ?? ''} onChange={v => setEditData(d => ({ ...d, caliber: v }))} />
-                    <select value={editData.type ?? 'handgun'} onChange={e => setEditData(d => ({ ...d, type: e.target.value }))} className="px-2 py-1 border rounded text-sm">
+                    <select value={editData.type ?? 'handgun'} onChange={e => setEditData(d => ({ ...d, type: e.target.value }))} className="px-2 py-1 border rounded text-sm bg-white dark:bg-neutral-900">
                       <option value="handgun">Handgun</option>
                       <option value="rifle">Rifle</option>
                       <option value="shotgun">Shotgun</option>
                     </select>
-                    <input value={editData.serialNumber ?? ''} onChange={e => setEditData(d => ({ ...d, serialNumber: e.target.value || null }))} className="px-2 py-1 border rounded text-sm" placeholder="Serial" />
-                    <input value={editData.notes ?? ''} onChange={e => setEditData(d => ({ ...d, notes: e.target.value || null }))} className="px-2 py-1 border rounded text-sm" placeholder="Notes" />
-                    <label className="text-[11px] text-neutral-500 mt-1">Initial rounds (pre-app)
+                    <input value={editData.serialNumber ?? ''} onChange={e => setEditData(d => ({ ...d, serialNumber: e.target.value || null }))} className="px-2 py-1 border rounded text-sm bg-white dark:bg-neutral-900" placeholder="Serial" />
+                    <input value={editData.notes ?? ''} onChange={e => setEditData(d => ({ ...d, notes: e.target.value || null }))} className="px-2 py-1 border rounded text-sm bg-white dark:bg-neutral-900" placeholder="Notes" />
+                    <label className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">Initial rounds (pre-app)
                       <input type="text" inputMode="numeric" pattern="[0-9]*" value={editData.initialRounds ?? ''} onChange={e => setEditData(d => ({ ...d, initialRounds: e.target.value ? Number(e.target.value.replace(/\D/g, '')) : 0 }))} className="mt-1 px-2 py-1 border rounded text-sm w-full" placeholder="0" />
                     </label>
                     <div className="flex gap-2 mt-1">
                       <button onClick={saveEdit} className="text-xs px-2 py-1 bg-black text-white rounded cursor-pointer hover:opacity-80">Save</button>
-                      <button onClick={() => setEditingId(null)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">Cancel</button>
+                      <button onClick={() => setEditingId(null)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">Cancel</button>
                     </div>
                   </div>
                 ) : (
                   <>
                     <button type="button" onClick={() => onWeaponClick(w.id)}
-                      className="w-full text-left rounded-lg hover:bg-neutral-50 transition-colors cursor-pointer -m-1 p-1">
+                      className="w-full text-left rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer -m-1 p-1">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="text-lg font-bold text-neutral-900">{w.name}</p>
-                          <p className="text-xs text-neutral-400 capitalize mt-0.5">{w.type} · {w.caliber}</p>
+                          <p className="text-lg font-bold text-neutral-900 dark:text-neutral-100">{w.name}</p>
+                          <p className="text-xs text-neutral-400 dark:text-neutral-500 capitalize mt-0.5">{w.type} · {w.caliber}</p>
                         </div>
-                        <span className="shrink-0 text-xs bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full">{w.caliber}</span>
+                        <span className="shrink-0 text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 px-2 py-0.5 rounded-full">{w.caliber}</span>
                       </div>
                     </button>
 
                     <div className="mt-4">
                       {totalsLoading && total === undefined ? (
-                        <div className="h-8 w-20 bg-neutral-100 animate-pulse rounded" />
+                        <div className="h-8 w-20 bg-neutral-100 dark:bg-neutral-800 animate-pulse rounded" />
                       ) : (
-                        <p className="text-3xl font-bold text-neutral-900">{total?.toLocaleString() ?? '0'}</p>
+                        <p className="text-3xl font-bold text-neutral-900 dark:text-neutral-100">{total?.toLocaleString() ?? '0'}</p>
                       )}
-                      <p className="text-xs text-neutral-400 mt-1">rounds fired · total</p>
+                      <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">rounds fired · total</p>
                       {(w.initialRounds ?? 0) > 0 && !totalsLoading && (
-                        <p className="text-[11px] text-neutral-500 mt-1">
+                        <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">
                           {w.initialRounds.toLocaleString()} prior + {Math.max(0, (total ?? 0) - w.initialRounds).toLocaleString()} tracked
                         </p>
                       )}
                     </div>
 
-                    {w.serialNumber && <p className="text-xs text-neutral-500 mt-3">S/N: {w.serialNumber}</p>}
-                    {w.notes && <p className="text-xs text-neutral-500 mt-1 truncate">{w.notes}</p>}
+                    {w.serialNumber && <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-3">S/N: {w.serialNumber}</p>}
+                    {w.notes && <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 truncate">{w.notes}</p>}
 
                     {(() => {
                       if (totalsLoading || cleaningsLoading || total === undefined || !(w.id in cleanings)) {
                         return (
-                          <div className="mt-3 rounded-lg border border-neutral-200 p-3">
-                            <div className="h-3 w-24 bg-neutral-100 animate-pulse rounded" />
-                            <div className="mt-2 h-2 bg-neutral-100 animate-pulse rounded" />
+                          <div className="mt-3 rounded-lg border border-neutral-200 dark:border-neutral-700 p-3">
+                            <div className="h-3 w-24 bg-neutral-100 dark:bg-neutral-800 animate-pulse rounded" />
+                            <div className="mt-2 h-2 bg-neutral-100 dark:bg-neutral-800 animate-pulse rounded" />
                           </div>
                         )
                       }
@@ -2514,7 +2495,7 @@ function WeaponManager({ weapons, onRefresh, onWeaponClick }: { weapons: Weapon[
                       if (!hasSchedule) {
                         return (
                           <div className="mt-3">
-                            <button onClick={() => setCleaningWeapon(w)} className="w-full text-xs px-3 py-2 border border-dashed border-neutral-300 rounded-lg text-neutral-500 hover:border-neutral-400 hover:text-neutral-700 cursor-pointer">
+                            <button onClick={() => setCleaningWeapon(w)} className="w-full text-xs px-3 py-2 border border-dashed border-neutral-300 dark:border-neutral-600 rounded-lg text-neutral-500 dark:text-neutral-400 hover:border-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer">
                               No cleaning schedule · Set up →
                             </button>
                           </div>
@@ -2526,34 +2507,34 @@ function WeaponManager({ weapons, onRefresh, onWeaponClick }: { weapons: Weapon[
                       const pctRounds = rInt ? Math.min(100, Math.max(0, (roundsSince / rInt) * 100)) : 0
                       const pctDays = dInt ? Math.min(100, Math.max(0, (daysSince / dInt) * 100)) : 0
                       return (
-                        <div className={`mt-3 rounded-lg border p-3 ${overdue ? 'bg-red-50 border-red-200' : 'bg-neutral-50 border-neutral-200'}`}>
+                        <div className={`mt-3 rounded-lg border p-3 ${overdue ? 'bg-red-50 border-red-200' : 'bg-neutral-50 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700'}`}>
                           <div className="flex items-center justify-between">
-                            <span className={`text-xs font-semibold ${overdue ? 'text-red-700' : 'text-neutral-700'}`}>{overdue ? 'Overdue' : 'Cleaning due'}</span>
-                            <button onClick={() => setCleaningWeapon(w)} className="text-[11px] text-neutral-500 hover:text-neutral-800 underline cursor-pointer">Manage →</button>
+                            <span className={`text-xs font-semibold ${overdue ? 'text-red-700' : 'text-neutral-700 dark:text-neutral-300'}`}>{overdue ? 'Overdue' : 'Cleaning due'}</span>
+                            <button onClick={() => setCleaningWeapon(w)} className="text-[11px] text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 underline cursor-pointer">Manage →</button>
                           </div>
                           {rInt != null && (
                             <div className="mt-2">
-                              <div className="flex justify-between text-[11px] text-neutral-500 mb-1"><span>{roundsSince}/{rInt} rds</span><span>{dueRounds! > 0 ? `${dueRounds} left` : `${Math.abs(dueRounds!)} over`}</span></div>
-                              <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden"><div className={`h-full ${dueRounds != null && dueRounds <= 0 ? 'bg-red-500' : 'bg-neutral-900'}`} style={{ width: `${pctRounds}%` }} /></div>
+                              <div className="flex justify-between text-[11px] text-neutral-500 dark:text-neutral-400 mb-1"><span>{roundsSince}/{rInt} rds</span><span>{dueRounds! > 0 ? `${dueRounds} left` : `${Math.abs(dueRounds!)} over`}</span></div>
+                              <div className="h-1.5 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden"><div className={`h-full ${dueRounds != null && dueRounds <= 0 ? 'bg-red-500' : 'bg-neutral-900 dark:bg-neutral-100'}`} style={{ width: `${pctRounds}%` }} /></div>
                             </div>
                           )}
                           {dInt != null && (
                             <div className="mt-2">
-                              <div className="flex justify-between text-[11px] text-neutral-500 mb-1"><span>{daysSince}/{dInt}d</span><span>{dueDays! > 0 ? `${dueDays}d left` : `${Math.abs(dueDays!)}d over`}</span></div>
-                              <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden"><div className={`h-full ${dueDays != null && dueDays <= 0 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${pctDays}%` }} /></div>
+                              <div className="flex justify-between text-[11px] text-neutral-500 dark:text-neutral-400 mb-1"><span>{daysSince}/{dInt}d</span><span>{dueDays! > 0 ? `${dueDays}d left` : `${Math.abs(dueDays!)}d over`}</span></div>
+                              <div className="h-1.5 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden"><div className={`h-full ${dueDays != null && dueDays <= 0 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${pctDays}%` }} /></div>
                             </div>
                           )}
-                          <p className="text-[11px] text-neutral-400 mt-2">Last: {latest ? `${new Date(latest.cleanedAt).toLocaleDateString()} @ ${latest.roundCountAtCleaning.toLocaleString()} rds` : `Never`}{latest?.note ? ` · ${latest.note}` : ''}</p>
+                          <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mt-2">Last: {latest ? `${new Date(latest.cleanedAt).toLocaleDateString()} @ ${latest.roundCountAtCleaning.toLocaleString()} rds` : `Never`}{latest?.note ? ` · ${latest.note}` : ''}</p>
                         </div>
                       )
                     })()}
 
-                    <div className="flex items-center gap-2 mt-4 pt-3 border-t border-neutral-100 flex-wrap">
-                      <button onClick={() => onWeaponClick(w.id)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">
+                    <div className="flex items-center gap-2 mt-4 pt-3 border-t border-neutral-100 dark:border-neutral-800 flex-wrap">
+                      <button onClick={() => onWeaponClick(w.id)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">
                         Details
                       </button>
-                      <button onClick={() => setLogCleaningWeapon(w)} className="text-xs px-2 py-1 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700">Log Cleaning</button>
-                      <button onClick={() => startEdit(w)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">Edit</button>
+                      <button onClick={() => setCleaningWeapon(w)} className="text-xs px-2 py-1 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700">Log Cleaning</button>
+                      <button onClick={() => startEdit(w)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">Edit</button>
                       <button onClick={() => deleteWeapon(w.id)} className="text-xs px-2 py-1 border border-red-200 text-red-600 rounded cursor-pointer hover:bg-red-50">Delete</button>
                     </div>
                   </>
@@ -2580,76 +2561,6 @@ function WeaponManager({ weapons, onRefresh, onWeaponClick }: { weapons: Weapon[
           }}
         />
       )}
-      {logCleaningWeapon && (
-        <LogCleaningModal
-          weapon={logCleaningWeapon}
-          totalRounds={totals[logCleaningWeapon.id] ?? 0}
-          onClose={() => setLogCleaningWeapon(null)}
-          onSaved={async () => {
-            await reloadCleanings(logCleaningWeapon.id)
-            onRefresh()
-          }}
-        />
-      )}
-    </div>
-  )
-}
-
-function WeaponFiringHistoryView({ history, fmtDate, fmtTime }: {
-  history: any
-  fmtDate: (d: string | Date) => string
-  fmtTime: (d: string | Date) => string
-}) {
-  const total = history.totalRounds ?? 0
-  const sessions: any[] = history.sessions ?? []
-  const initial = history.weapon?.initialRounds ?? 0
-  const tracked = Math.max(0, total - initial)
-  return (
-    <div>
-      <div className="flex items-baseline gap-2 mb-3">
-        <span className="text-2xl font-bold">{total.toLocaleString()}</span>
-        <span className="text-sm text-neutral-500">rounds fired total</span>
-      </div>
-      {initial > 0 && (
-        <p className="text-xs text-neutral-500 mb-3">{initial.toLocaleString()} prior (pre-app) + {tracked.toLocaleString()} tracked</p>
-      )}
-
-      {history.byAmmoType?.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {history.byAmmoType.map((a: any) => (
-            <span key={a.ammoTypeId} className="text-xs px-2.5 py-1 bg-white border border-neutral-200 rounded-full text-neutral-700">
-              {a.name} ({a.caliber}): <span className="font-semibold">{a.rounds.toLocaleString()}</span>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {sessions.length === 0 ? (
-        <p className="text-sm text-neutral-500">No range-day firing recorded for this weapon.</p>
-      ) : (
-        <div className="space-y-3">
-          {sessions.map(s => (
-            <div key={s.sessionId} className="border border-neutral-200 rounded-lg p-3 bg-white">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">{fmtDate(s.startedAt)}{s.endedAt ? '' : ' (in progress)'}</span>
-                <span className="text-xs text-neutral-500">{s.rounds.toLocaleString()} rounds</span>
-              </div>
-              {s.note && <p className="text-xs text-neutral-500 mb-2 italic">“{s.note}”</p>}
-              <ul className="space-y-1">
-                {s.strings.map((st: any) => (
-                  <li key={st.id} className="flex items-center justify-between text-sm">
-                    <span className="text-neutral-700">
-                      {st.ammoName} — <span className="font-medium">{st.rounds.toLocaleString()}</span> rounds
-                      {st.note ? <span className="text-neutral-500 italic"> “{st.note}”</span> : null}
-                    </span>
-                    <span className="text-xs text-neutral-400">{fmtTime(st.occurredAt)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
@@ -2665,7 +2576,6 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   const [editData, setEditData] = useState<Partial<Weapon>>({})
   const [error, setError] = useState('')
   const [showCleaning, setShowCleaning] = useState(false)
-  const [showLogCleaning, setShowLogCleaning] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const load = useCallback(async () => {
@@ -2682,9 +2592,6 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   }, [weaponId])
 
   useEffect(() => { load() }, [load])
-
-  const fmtDate = (d: string | Date) => new Date(d).toLocaleDateString()
-  const fmtTime = (d: string | Date) => new Date(d).toLocaleString()
 
   const saveEdit = async () => {
     const res = await apiFetch(`/weapons/${weaponId}`, {
@@ -2709,11 +2616,65 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
     onBack()
   }
 
-  if (loading) return <p className="text-neutral-400 text-sm">Loading weapon…</p>
+  type TimelineEvent =
+    | { kind: 'shot'; id: string; at: string; rounds: number; ammoName: string; sessionNote: string | null }
+    | { kind: 'cleaned'; id: string; at: string; roundCount: number; note: string | null }
+
+  const practice = useMemo(() => {
+    const sessions: any[] = history?.sessions ?? []
+    const totalRounds: number = history?.totalRounds ?? 0
+    const now = Date.now()
+    let last30 = 0, last90 = 0, lastShot: string | null = null
+    for (const s of sessions) {
+      for (const st of (s.strings ?? [])) {
+        const age = now - new Date(st.occurredAt).getTime()
+        if (age <= 30 * 86400000) last30 += st.rounds
+        if (age <= 90 * 86400000) last90 += st.rounds
+        if (!lastShot || new Date(st.occurredAt) > new Date(lastShot)) lastShot = st.occurredAt
+      }
+    }
+    return { last30, last90, lastShot, perSession: sessions.length > 0 ? Math.round(totalRounds / sessions.length) : 0 }
+  }, [history])
+
+  const timeline = useMemo<TimelineEvent[]>(() => {
+    const sessions: any[] = history?.sessions ?? []
+    const events: TimelineEvent[] = []
+    for (const s of sessions) {
+      for (const st of (s.strings ?? [])) {
+        events.push({ kind: 'shot', id: `shot-${st.id}`, at: st.occurredAt, rounds: st.rounds, ammoName: st.ammoName, sessionNote: s.note ?? null })
+      }
+    }
+    for (const c of cleanings) {
+      events.push({ kind: 'cleaned', id: `clean-${c.id}`, at: c.cleanedAt, roundCount: c.roundCountAtCleaning, note: c.note })
+    }
+    return events.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+  }, [history, cleanings])
+
+  const weeks = useMemo(() => {
+    const sessions: any[] = history?.sessions ?? []
+    const now = Date.now()
+    const buckets = Array.from({ length: 12 }, (_, i) => ({
+      rounds: 0,
+      start: now - (11 - i) * 7 * 86400000 - 6 * 86400000,
+    }))
+    for (const s of sessions) {
+      for (const st of (s.strings ?? [])) {
+        const idx = 11 - Math.floor((now - new Date(st.occurredAt).getTime()) / (7 * 86400000))
+        if (idx >= 0 && idx < 12) buckets[idx].rounds += st.rounds
+      }
+    }
+    return buckets.map((b, i) => ({
+      key: i,
+      rounds: b.rounds,
+      label: new Date(b.start).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }),
+    }))
+  }, [history])
+
+  if (loading) return <p className="text-neutral-400 dark:text-neutral-500 text-sm">Loading weapon…</p>
   if (!weapon) return (
     <div>
-      <button onClick={onBack} className="text-sm text-neutral-500 hover:text-neutral-800 cursor-pointer transition-colors">← Back</button>
-      <p className="text-sm text-neutral-500 mt-4">Weapon not found.</p>
+      <button onClick={onBack} className="text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer transition-colors">← Back</button>
+      <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-4">Weapon not found.</p>
     </div>
   )
 
@@ -2731,124 +2692,187 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   const hasSchedule = rInt != null || dInt != null
   const overdue = hasSchedule && ((rInt != null && rInt - roundsSince <= 0) || (dInt != null && dInt - daysSince <= 0))
 
+  const sessions: any[] = history?.sessions ?? []
+  const byAmmoType: any[] = history?.byAmmoType ?? []
+
+  const weekMax = Math.max(1, ...weeks.map(w => w.rounds))
+  const activityTotal = weeks.reduce((s, w) => s + w.rounds, 0)
+  const mixMax = Math.max(1, ...byAmmoType.map((a: any) => a.rounds))
+
+  const coarseTime = (iso: string) => {
+    const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+    if (days <= 0) return 'today'
+    if (days === 1) return 'yesterday'
+    if (days < 30) return `${days}d ago`
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  }
+
+  const verdict = (() => {
+    if (!practice.lastShot) return { dot: 'bg-neutral-300', text: 'No range time logged yet' }
+    const ageDays = (Date.now() - new Date(practice.lastShot).getTime()) / 86400000
+    if (ageDays <= 14 && practice.last30 >= 100) return { dot: 'bg-green-500', text: `Active · ${practice.last30.toLocaleString()} rds in 30d · last shot ${coarseTime(practice.lastShot)}` }
+    if (ageDays <= 90) return { dot: 'bg-amber-400', text: `Recent · ${practice.last90.toLocaleString()} rds in 90d · last shot ${coarseTime(practice.lastShot)}` }
+    return { dot: 'bg-neutral-300', text: `Idle · last shot ${coarseTime(practice.lastShot)}` }
+  })()
+
+  const cleaningStatus = !hasSchedule
+    ? 'Set up'
+    : overdue
+      ? 'Overdue'
+      : rInt != null
+        ? `${(rInt - roundsSince).toLocaleString()} rds left`
+        : `${(dInt! - daysSince).toLocaleString()}d left`
+
   return (
     <div>
       {/* Back */}
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={onBack}
-          className="text-sm text-neutral-500 hover:text-neutral-800 cursor-pointer transition-colors"
+          className="text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer transition-colors"
         >
           ← Back
         </button>
       </div>
 
       {/* Weapon header card */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm mb-8">
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-8">
         {editing ? (
           <div className="flex flex-col gap-2">
             {error && <p className="text-red-500 text-sm">{error}</p>}
-            <input value={editData.name ?? ''} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} className="px-2 py-1 border rounded text-sm" placeholder="Name" />
+            <input value={editData.name ?? ''} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} className="px-2 py-1 border rounded text-sm bg-white dark:bg-neutral-900" placeholder="Name" />
             <CaliberSelect value={editData.caliber ?? ''} onChange={v => setEditData(d => ({ ...d, caliber: v }))} />
-            <select value={editData.type ?? 'handgun'} onChange={e => setEditData(d => ({ ...d, type: e.target.value }))} className="px-2 py-1 border rounded text-sm">
+            <select value={editData.type ?? 'handgun'} onChange={e => setEditData(d => ({ ...d, type: e.target.value }))} className="px-2 py-1 border rounded text-sm bg-white dark:bg-neutral-900">
               <option value="handgun">Handgun</option>
               <option value="rifle">Rifle</option>
               <option value="shotgun">Shotgun</option>
             </select>
-            <input value={editData.serialNumber ?? ''} onChange={e => setEditData(d => ({ ...d, serialNumber: e.target.value || null }))} className="px-2 py-1 border rounded text-sm" placeholder="Serial" />
-            <input value={editData.notes ?? ''} onChange={e => setEditData(d => ({ ...d, notes: e.target.value || null }))} className="px-2 py-1 border rounded text-sm" placeholder="Notes" />
-            <label className="text-[11px] text-neutral-500 mt-1">Initial rounds (pre-app)
+            <input value={editData.serialNumber ?? ''} onChange={e => setEditData(d => ({ ...d, serialNumber: e.target.value || null }))} className="px-2 py-1 border rounded text-sm bg-white dark:bg-neutral-900" placeholder="Serial" />
+            <input value={editData.notes ?? ''} onChange={e => setEditData(d => ({ ...d, notes: e.target.value || null }))} className="px-2 py-1 border rounded text-sm bg-white dark:bg-neutral-900" placeholder="Notes" />
+            <label className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1">Initial rounds (pre-app)
               <input type="text" inputMode="numeric" pattern="[0-9]*" value={editData.initialRounds ?? ''} onChange={e => setEditData(d => ({ ...d, initialRounds: e.target.value ? Number(e.target.value.replace(/\D/g, '')) : 0 }))} className="mt-1 px-2 py-1 border rounded text-sm w-full" placeholder="0" />
             </label>
             <div className="flex gap-2 mt-1">
               <button onClick={saveEdit} className="text-xs px-2 py-1 bg-black text-white rounded cursor-pointer hover:opacity-80">Save</button>
-              <button onClick={() => setEditing(false)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50">Cancel</button>
+              <button onClick={() => setEditing(false)} className="text-xs px-2 py-1 border rounded cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">Cancel</button>
             </div>
-            <div className="mt-3 pt-3 border-t border-neutral-100">
+            <div className="mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-800">
               <button onClick={() => setShowDeleteConfirm(true)} className="text-xs px-2 py-1 border border-red-200 text-red-600 rounded cursor-pointer hover:bg-red-50">Delete weapon</button>
             </div>
           </div>
         ) : (
           <>
-            <div className="flex items-start justify-between flex-wrap gap-2">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-2xl font-bold text-neutral-900">{weapon.name}</h2>
-                  <button onClick={() => { setEditData({ name: weapon.name, caliber: weapon.caliber, type: weapon.type, serialNumber: weapon.serialNumber, notes: weapon.notes, initialRounds: weapon.initialRounds }); setEditing(true) }} title="Edit weapon"
-                    className="text-neutral-400 hover:text-neutral-700 cursor-pointer transition-colors">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07A4.5 4.5 0 018.738 17.5l-3.5.875.875-3.5a4.5 4.5 0 011.447-1.843L16.862 4.487z" /></svg>
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500">
-                  <span className="bg-neutral-100 px-2 py-0.5 rounded-full capitalize">{weapon.type}</span>
-                  <span className="bg-neutral-100 px-2 py-0.5 rounded-full">{weapon.caliber}</span>
-                  {weapon.serialNumber && <span>S/N: {weapon.serialNumber}</span>}
-                </div>
-                {weapon.notes && <p className="text-sm text-neutral-500 mt-2">{weapon.notes}</p>}
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{weapon.name}</h2>
+                <button onClick={() => { setEditData({ name: weapon.name, caliber: weapon.caliber, type: weapon.type, serialNumber: weapon.serialNumber, notes: weapon.notes, initialRounds: weapon.initialRounds }); setEditing(true) }} title="Edit weapon"
+                  className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer transition-colors">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07A4.5 4.5 0 018.738 17.5l-3.5.875.875-3.5a4.5 4.5 0 011.447-1.843L16.862 4.487z" /></svg>
+                </button>
               </div>
-              <div className="text-right">
-                <p className="text-4xl font-bold text-neutral-900">{total.toLocaleString()}</p>
-                <p className="text-xs text-neutral-400 mt-0.5">rounds fired · total</p>
+              <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+                <span className="bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full capitalize">{weapon.type}</span>
+                <span className="bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">{weapon.caliber}</span>
+                {weapon.serialNumber && <span>S/N: {weapon.serialNumber}</span>}
+              </div>
+              {weapon.notes && <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">{weapon.notes}</p>}
+              {initial > 0 && (
+                <div className="mt-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2 text-xs text-neutral-600 dark:text-neutral-400 tabular-nums">
+                  {initial.toLocaleString()} prior (pre-app) + {tracked.toLocaleString()} tracked
+                </div>
+              )}
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-3">
+                {[
+                  { value: total.toLocaleString(), label: 'fired' },
+                  { value: sessions.length.toLocaleString(), label: sessions.length === 1 ? 'day' : 'days' },
+                  { value: cleanings.length.toLocaleString(), label: cleanings.length === 1 ? 'cleaning' : 'cleanings' },
+                  { value: roundsSince.toLocaleString(), label: 'since clean' },
+                  { value: practice.perSession.toLocaleString(), label: 'avg/session' },
+                ].map(s => (
+                  <div key={s.label} className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-2 text-center">
+                    <p className="text-sm font-bold tabular-nums">{s.value}</p>
+                    <p className="text-[10px] text-neutral-400 dark:text-neutral-500">{s.label}</p>
+                  </div>
+                ))}
               </div>
             </div>
-            {initial > 0 && (
-              <p className="text-xs text-neutral-500 mt-2">{initial.toLocaleString()} prior (pre-app) + {tracked.toLocaleString()} tracked</p>
-            )}
-            {/* Cleaning status (display only — actions live below) */}
-            {hasSchedule && (
-              <div className={`mt-4 rounded-lg border p-3 ${overdue ? 'bg-red-50 border-red-200' : 'bg-neutral-50 border-neutral-200'}`}>
-                <span className={`text-xs font-semibold ${overdue ? 'text-red-700' : 'text-neutral-700'}`}>{overdue ? 'Overdue' : 'Cleaning due'}</span>
-                {rInt != null && (
-                  <div className="mt-2">
-                    <div className="flex justify-between text-[11px] text-neutral-500 mb-1"><span>{roundsSince}/{rInt} rds</span><span>{rInt - roundsSince > 0 ? `${rInt - roundsSince} left` : `${roundsSince - rInt} over`}</span></div>
-                    <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden"><div className={`h-full ${rInt - roundsSince <= 0 ? 'bg-red-500' : 'bg-neutral-900'}`} style={{ width: `${Math.min(100, Math.max(0, (roundsSince / rInt) * 100))}%` }} /></div>
+            {/* Rotation status */}
+            <div className="mt-4 flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${verdict.dot}`} />
+              <span className="truncate">{verdict.text}</span>
+            </div>
+            {/* Activity — last 12 weeks */}
+            <div className="mt-4">
+              <div className="flex items-baseline justify-between mb-2">
+                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Activity</p>
+                <p className="text-xs text-neutral-400 dark:text-neutral-500 tabular-nums">{activityTotal.toLocaleString()} rds / 12 wks</p>
+              </div>
+              <div className="flex items-end gap-1 h-16">
+                {weeks.map(w => (
+                  <div key={w.key} title={`Wk of ${w.label} · ${w.rounds.toLocaleString()} rds`} className="flex-1 flex flex-col justify-end h-full">
+                    <div className={`${w.rounds > 0 ? 'bg-neutral-900 dark:bg-neutral-100' : 'bg-neutral-200 dark:bg-neutral-700'} rounded-sm w-full`} style={{ height: `${w.rounds > 0 ? Math.max(8, (w.rounds / weekMax) * 100) : 6}%` }} />
                   </div>
-                )}
-                {dInt != null && (
-                  <div className="mt-2">
-                    <div className="flex justify-between text-[11px] text-neutral-500 mb-1"><span>{daysSince}/{dInt}d</span><span>{dInt - daysSince > 0 ? `${dInt - daysSince}d left` : `${daysSince - dInt}d over`}</span></div>
-                    <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden"><div className={`h-full ${dInt - daysSince <= 0 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${Math.min(100, Math.max(0, (daysSince / dInt) * 100))}%` }} /></div>
-                  </div>
-                )}
-                <p className="text-[11px] text-neutral-400 mt-2">Last: {latest ? `${new Date(latest.cleanedAt).toLocaleDateString()} @ ${latest.roundCountAtCleaning.toLocaleString()} rds` : `Never`}{latest?.note ? ` · ${latest.note}` : ''}</p>
+                ))}
+              </div>
+            </div>
+            {/* Ammo through this gun */}
+            {byAmmoType.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Ammo Shot</p>
+                <div className="flex flex-col gap-2">
+                  {byAmmoType.map((a: any) => (
+                    <div key={a.ammoTypeId}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-neutral-700 dark:text-neutral-300 truncate">{a.name}</span>
+                        <span className="text-neutral-500 dark:text-neutral-400 tabular-nums ml-2 shrink-0">{a.rounds.toLocaleString()}</span>
+                      </div>
+                      <div className="h-2 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-neutral-900 dark:bg-neutral-100 rounded-full" style={{ width: `${(a.rounds / mixMax) * 100}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
-            <div className="mt-4 pt-3 border-t border-neutral-100 flex flex-col gap-2">
-              <button onClick={() => setShowLogCleaning(true)} className="w-full px-4 py-3 bg-blue-600 text-white rounded-xl text-base font-semibold cursor-pointer hover:bg-blue-700 active:bg-blue-800">Log Cleaning</button>
-              <button onClick={() => setShowCleaning(true)} className="w-full px-4 py-3 border border-neutral-300 bg-white rounded-xl text-base font-medium text-neutral-800 cursor-pointer hover:bg-neutral-50 active:bg-neutral-100">{hasSchedule ? 'Manage cleaning schedule' : 'Set up cleaning schedule'}</button>
+            {/* Cleaning — one door */}
+            <div className="mt-4">
+              <button onClick={() => setShowCleaning(true)}
+                className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 cursor-pointer transition-colors ${overdue ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-neutral-50 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
+                <span className={`text-sm font-semibold ${overdue ? 'text-red-700' : 'text-neutral-700 dark:text-neutral-300'}`}>Cleaning</span>
+                <span className={`text-xs ${overdue ? 'text-red-600' : 'text-neutral-500 dark:text-neutral-400'}`}>{cleaningStatus} →</span>
+              </button>
             </div>
           </>
         )}
       </div>
 
-      {/* Firing history */}
-      <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">
-        Firing History
+      {/* History — shots and cleanings, newest first */}
+      <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-3">
+        History
       </h3>
-      <div className="mb-8">
-        {history ? (
-          <WeaponFiringHistoryView history={history} fmtDate={fmtDate} fmtTime={fmtTime} />
-        ) : (
-          <p className="text-sm text-neutral-500">No firing history yet.</p>
-        )}
-      </div>
-
-      {/* Cleaning log */}
-      <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide mb-3">
-        Cleaning Log
-      </h3>
-      {cleanings.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-neutral-200 p-8 text-center">
-          <p className="text-neutral-400 text-sm">No cleanings logged yet.</p>
+      {timeline.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-neutral-200 dark:border-neutral-700 p-8 text-center">
+          <p className="text-neutral-400 dark:text-neutral-500 text-sm">No history yet — shots and cleanings will appear here.</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden shadow-sm divide-y divide-neutral-100">
-          {cleanings.map(c => (
-            <div key={c.id} className="flex justify-between items-center px-4 py-3 text-sm">
-              <span className="text-neutral-700">{new Date(c.cleanedAt).toLocaleDateString()} <span className="text-neutral-400">@ {c.roundCountAtCleaning.toLocaleString()} rds</span></span>
-              {c.note
-                ? <span className="text-xs text-neutral-500 truncate max-w-[200px]">{c.note}</span>
-                : <span className="text-xs text-neutral-300">—</span>}
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 overflow-hidden shadow-sm divide-y divide-neutral-100 dark:divide-neutral-800">
+          {timeline.map(e => e.kind === 'shot' ? (
+            <div key={e.id} className="px-4 py-3">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-neutral-400 dark:text-neutral-500">{new Date(e.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-neutral-800 text-white">SHOT</span>
+                <span className="ml-auto font-semibold tabular-nums">{e.rounds.toLocaleString()} rds</span>
+              </div>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">{e.ammoName}{e.sessionNote ? ` · ${e.sessionNote}` : ''}</p>
+            </div>
+          ) : (
+            <div key={e.id} className="px-4 py-3">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-neutral-400 dark:text-neutral-500">{new Date(e.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-600 text-white">CLEANED</span>
+                <span className="ml-auto text-neutral-500 dark:text-neutral-400 tabular-nums text-xs">@ {e.roundCount.toLocaleString()} rds</span>
+              </div>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">{e.note ?? '—'}</p>
             </div>
           ))}
         </div>
@@ -2869,30 +2893,18 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
           }}
         />
       )}
-      {showLogCleaning && (
-        <LogCleaningModal
-          weapon={weapon}
-          totalRounds={total}
-          onClose={() => setShowLogCleaning(false)}
-          onSaved={async () => {
-            const res = await apiFetch(`/weapons/${weaponId}/cleanings`)
-            if (res.ok) setCleanings(await res.json())
-            onRefresh()
-          }}
-        />
-      )}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onClick={() => setShowDeleteConfirm(false)}>
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6"
+          <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl max-w-sm w-full p-6"
             onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold">Delete {weapon.name}?</h3>
-            <p className="text-sm text-neutral-600 mt-2">
+            <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-2">
               This permanently deletes the weapon and its history. This can't be undone.
             </p>
             <div className="flex gap-3 mt-4">
               <button type="button" onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 cursor-pointer">Cancel</button>
+                className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">Cancel</button>
               <button type="button" onClick={deleteWeapon}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer">Delete</button>
             </div>
@@ -2939,59 +2951,59 @@ function InventoryDashboard({ inventory, weapons, totals, cleanings, onCaliberCl
   return (
     <div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-        <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <p className="text-xs text-neutral-400 uppercase tracking-wide">Weapons</p>
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Weapons</p>
           <p className="text-2xl font-bold mt-1">{weapons.length}</p>
         </div>
-        <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <p className="text-xs text-neutral-400 uppercase tracking-wide">Rounds in storage</p>
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Rounds in storage</p>
           <p className="text-2xl font-bold mt-1">{totalRounds.toLocaleString()}</p>
         </div>
-        <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <p className="text-xs text-neutral-400 uppercase tracking-wide">Ammo types</p>
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Ammo types</p>
           <p className="text-2xl font-bold mt-1">{inventory.length}</p>
         </div>
-        <div className={`rounded-xl border p-4 ${cleaningDue > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-neutral-200'}`}>
-          <p className={`text-xs uppercase tracking-wide ${cleaningDue > 0 ? 'text-red-600' : 'text-neutral-400'}`}>Cleaning due</p>
+        <div className={`rounded-xl border p-4 ${cleaningDue > 0 ? 'bg-red-50 border-red-200' : 'bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-700'}`}>
+          <p className={`text-xs uppercase tracking-wide ${cleaningDue > 0 ? 'text-red-600' : 'text-neutral-400 dark:text-neutral-500'}`}>Cleaning due</p>
           <p className={`text-2xl font-bold mt-1 ${cleaningDue > 0 ? 'text-red-600' : ''}`}>{cleaningDue}</p>
         </div>
       </div>
 
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Ammo Overview</h3>
-        <button onClick={onViewAmmo} className="text-xs text-neutral-500 hover:text-neutral-800 underline cursor-pointer">View all →</button>
+        <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Ammo Overview</h3>
+        <button onClick={onViewAmmo} className="text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 underline cursor-pointer">View all →</button>
       </div>
       {groups.length === 0 ? (
-        <p className="text-sm text-neutral-500 mb-8">No ammo yet — add some in the Ammo tab.</p>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-8">No ammo yet — add some in the Ammo tab.</p>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
           {groups.slice(0, 3).map(group => (
-            <button key={group.caliber} onClick={() => onCaliberClick(group)} className="rounded-xl border border-neutral-200 bg-white p-4 text-left hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
-              <p className="text-sm font-semibold text-neutral-900">{group.caliber}</p>
-              <p className="text-xs text-neutral-400">{group.items.length} type{group.items.length !== 1 ? 's' : ''}</p>
+            <button key={group.caliber} onClick={() => onCaliberClick(group)} className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 text-left hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
+              <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{group.caliber}</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500">{group.items.length} type{group.items.length !== 1 ? 's' : ''}</p>
               <p className="text-xl font-bold mt-2">{group.totalBalance.toLocaleString()}</p>
-              <p className="text-xs text-neutral-400">rounds</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500">rounds</p>
             </button>
           ))}
         </div>
       )}
 
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Weapons Preview</h3>
-        <button onClick={onViewWeapons} className="text-xs text-neutral-500 hover:text-neutral-800 underline cursor-pointer">View all →</button>
+        <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Weapons Preview</h3>
+        <button onClick={onViewWeapons} className="text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 underline cursor-pointer">View all →</button>
       </div>
       {weapons.length === 0 ? (
-        <p className="text-sm text-neutral-500">No weapons yet — add one in the Weapons tab.</p>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">No weapons yet — add one in the Weapons tab.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {weapons.slice(0, 3).map(w => {
             const total = totals[w.id] ?? 0
             return (
-              <button key={w.id} onClick={() => onWeaponClick(w.id)} className="rounded-xl border border-neutral-200 bg-white p-4 text-left hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
+              <button key={w.id} onClick={() => onWeaponClick(w.id)} className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 text-left hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
                 <p className="text-sm font-semibold truncate">{w.name}</p>
-                <p className="text-xs text-neutral-400 capitalize">{w.type} · {w.caliber}</p>
+                <p className="text-xs text-neutral-400 dark:text-neutral-500 capitalize">{w.type} · {w.caliber}</p>
                 <p className="text-lg font-bold mt-2">{total.toLocaleString()} rds</p>
-                <p className="text-xs text-neutral-400">fired · tap for details</p>
+                <p className="text-xs text-neutral-400 dark:text-neutral-500">fired · tap for details</p>
               </button>
             )
           })}
@@ -3028,12 +3040,12 @@ function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClo
 
   if (loading) return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl p-6">Loading session…</div>
+      <div className="bg-white dark:bg-neutral-900 rounded-xl p-6">Loading session…</div>
     </div>
   )
   if (!detail) return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl p-6">Not found <button onClick={onClose} className="ml-4 text-sm underline cursor-pointer">Close</button></div>
+      <div className="bg-white dark:bg-neutral-900 rounded-xl p-6">Not found <button onClick={onClose} className="ml-4 text-sm underline cursor-pointer">Close</button></div>
     </div>
   )
 
@@ -3055,39 +3067,39 @@ function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
-      <div className="bg-white rounded-xl border border-neutral-200 max-w-2xl w-full my-8">
+      <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 max-w-2xl w-full my-8">
         <div className="p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-lg font-semibold text-neutral-900">{started.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} · {duration}</h3>
-              <p className="text-xs text-neutral-400 mt-1">{started.toLocaleString()} {ended ? `→ ${ended.toLocaleString()}` : ''}</p>
-              {detail.note && <p className="text-sm text-neutral-600 mt-2 italic">“{detail.note}”</p>}
+              <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{started.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} · {duration}</h3>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">{started.toLocaleString()} {ended ? `→ ${ended.toLocaleString()}` : ''}</p>
+              {detail.note && <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-2 italic">“{detail.note}”</p>}
             </div>
-            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 text-xl leading-none cursor-pointer">×</button>
+            <button onClick={onClose} className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 text-xl leading-none cursor-pointer">×</button>
           </div>
 
           <div className="grid grid-cols-3 gap-3 mt-6">
-            <div className="rounded-lg bg-neutral-50 border border-neutral-200 p-3 text-center">
+            <div className="rounded-lg bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 p-3 text-center">
               <p className="text-2xl font-bold">{totalFired.toLocaleString()}</p>
-              <p className="text-xs text-neutral-400">rds fired</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500">rds fired</p>
             </div>
-            <div className="rounded-lg bg-neutral-50 border border-neutral-200 p-3 text-center">
+            <div className="rounded-lg bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 p-3 text-center">
               <p className="text-2xl font-bold">{detail.weapons?.length ?? 0}</p>
-              <p className="text-xs text-neutral-400">weapons</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500">weapons</p>
             </div>
-            <div className="rounded-lg bg-neutral-50 border border-neutral-200 p-3 text-center">
+            <div className="rounded-lg bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 p-3 text-center">
               <p className="text-2xl font-bold">{sessionCostCents ? `$${(sessionCostCents / 100).toFixed(2)}` : '—'}</p>
-              <p className="text-xs text-neutral-400">on-site cost</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500">on-site cost</p>
             </div>
           </div>
 
           {byWeapon.size > 0 && (
             <div className="mt-6">
-              <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Per weapon</p>
+              <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Per weapon</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {[...byWeapon.entries()].map(([wid, rds]) => {
                   const w = detail.weapons?.find((x: any) => x.id === wid)
-                  return <span key={wid} className="text-xs px-2.5 py-1 bg-white border border-neutral-200 rounded-full">{w?.name ?? `Weapon #${wid}`} — <span className="font-semibold">{rds}</span> rds</span>
+                  return <span key={wid} className="text-xs px-2.5 py-1 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-full">{w?.name ?? `Weapon #${wid}`} — <span className="font-semibold">{rds}</span> rds</span>
                 })}
               </div>
             </div>
@@ -3095,14 +3107,14 @@ function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClo
 
           {byAmmo.size > 0 && (
             <div className="mt-4">
-              <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Per ammo</p>
+              <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Per ammo</p>
               <div className="mt-2 space-y-2">
                 {[...byAmmo.entries()].map(([aid, rds]) => {
                   const t = typeById.get(aid)
                   const avg = t ? null : null
                   return (
-                    <div key={aid} className="flex justify-between items-center text-sm border border-neutral-100 rounded-lg px-3 py-2">
-                      <span className="font-medium">{t?.name ?? `Type #${aid}`} <span className="text-neutral-400 font-normal">· {t?.caliber ?? ''} · {rds} rds fired</span></span>
+                    <div key={aid} className="flex justify-between items-center text-sm border border-neutral-100 dark:border-neutral-800 rounded-lg px-3 py-2">
+                      <span className="font-medium">{t?.name ?? `Type #${aid}`} <span className="text-neutral-400 dark:text-neutral-500 font-normal">· {t?.caliber ?? ''} · {rds} rds fired</span></span>
                     </div>
                   )
                 })}
@@ -3112,7 +3124,7 @@ function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClo
 
           {acquired.length > 0 && (
             <div className="mt-6">
-              <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Acquired on-site</p>
+              <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Acquired on-site</p>
               <div className="mt-2 space-y-1">
                 {acquired.map((tx: any) => {
                   const entry = tx.entries?.find((e: any) => !e.isBalancing)
@@ -3122,25 +3134,25 @@ function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClo
                   return (
                     <div key={tx.id} className="flex justify-between items-center text-sm border border-green-100 bg-green-50 rounded-lg px-3 py-2">
                       <span>{t?.name ?? `Type #${entry?.ammoTypeId}`} +{qty} rds</span>
-                      <span className="tabular-nums font-medium">{tx.price != null ? `$${(tx.price / 100).toFixed(2)}` : '—'}{perRd != null ? <span className="text-neutral-500 font-normal"> (${perRd.toFixed(2)}/rd)</span> : null}</span>
+                      <span className="tabular-nums font-medium">{tx.price != null ? `$${(tx.price / 100).toFixed(2)}` : '—'}{perRd != null ? <span className="text-neutral-500 dark:text-neutral-400 font-normal"> (${perRd.toFixed(2)}/rd)</span> : null}</span>
                     </div>
                   )
                 })}
               </div>
-              <p className="text-xs text-neutral-400 mt-2">Price shown is total paid for that acquisition; per-round is price ÷ quantity. Avg $/round in Inventory is lifetime avg across all acquisitions where price was tracked.</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-2">Price shown is total paid for that acquisition; per-round is price ÷ quantity. Avg $/round in Inventory is lifetime avg across all acquisitions where price was tracked.</p>
             </div>
           )}
 
           <div className="mt-6">
-            <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Strings</p>
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Strings</p>
             {strings.length === 0 ? (
-              <p className="text-sm text-neutral-400 mt-2">No shots recorded.</p>
+              <p className="text-sm text-neutral-400 dark:text-neutral-500 mt-2">No shots recorded.</p>
             ) : (
               <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
                 {strings.map((s: any) => {
                   const w = detail.weapons?.find((x: any) => x.id === s.weaponId)
                   const t = typeById.get(s.ammoTypeId)
-                  return <div key={s.id} className="flex justify-between text-sm border-b border-neutral-50 py-1"><span>{w?.name ?? `W#${s.weaponId}`} · {t?.name ?? `A#${s.ammoTypeId}`} — {s.rounds} rds {s.note ? `“${s.note}”` : ''}</span><span className="text-xs text-neutral-400">{new Date(s.occurredAt).toLocaleTimeString()}</span></div>
+                  return <div key={s.id} className="flex justify-between text-sm border-b border-neutral-50 py-1"><span>{w?.name ?? `W#${s.weaponId}`} · {t?.name ?? `A#${s.ammoTypeId}`} — {s.rounds} rds {s.note ? `“${s.note}”` : ''}</span><span className="text-xs text-neutral-400 dark:text-neutral-500">{new Date(s.occurredAt).toLocaleTimeString()}</span></div>
                 })}
               </div>
             )}
@@ -3148,7 +3160,7 @@ function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClo
 
           {bag.length > 0 && (
             <div className="mt-6">
-              <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">{detail.endedAt ? 'Returned to storage' : 'Bag at end'}</p>
+              <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">{detail.endedAt ? 'Returned to storage' : 'Bag at end'}</p>
               <div className="mt-2 space-y-1">
                 {bag.map((b: any) => {
                   const t = typeById.get(b.ammoTypeId)
@@ -3156,9 +3168,9 @@ function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClo
                   const isEnded = !!detail.endedAt
                   if (isEnded) {
                     const returned = Math.max(0, b.taken + b.acquired - fired)
-                    return <div key={b.ammoTypeId} className="flex justify-between text-sm border border-neutral-100 rounded-lg px-3 py-2"><span>{t?.name ?? `Type #${b.ammoTypeId}`}</span><span className="tabular-nums text-neutral-500">{returned} returned{fired > 0 ? `, ${fired} fired` : ''} (took {b.taken}{b.acquired > 0 ? ` +${b.acquired} on-site` : ''})</span></div>
+                    return <div key={b.ammoTypeId} className="flex justify-between text-sm border border-neutral-100 dark:border-neutral-800 rounded-lg px-3 py-2"><span>{t?.name ?? `Type #${b.ammoTypeId}`}</span><span className="tabular-nums text-neutral-500 dark:text-neutral-400">{returned} returned{fired > 0 ? `, ${fired} fired` : ''} (took {b.taken}{b.acquired > 0 ? ` +${b.acquired} on-site` : ''})</span></div>
                   }
-                  return <div key={b.ammoTypeId} className="flex justify-between text-sm border border-neutral-100 rounded-lg px-3 py-2"><span>{t?.name ?? `Type #${b.ammoTypeId}`}</span><span className="tabular-nums text-neutral-500">{b.inBag} in bag (took {b.taken}{b.acquired > 0 ? ` +${b.acquired} on-site` : ''}{fired > 0 ? `, ${fired} fired` : ''})</span></div>
+                  return <div key={b.ammoTypeId} className="flex justify-between text-sm border border-neutral-100 dark:border-neutral-800 rounded-lg px-3 py-2"><span>{t?.name ?? `Type #${b.ammoTypeId}`}</span><span className="tabular-nums text-neutral-500 dark:text-neutral-400">{b.inBag} in bag (took {b.taken}{b.acquired > 0 ? ` +${b.acquired} on-site` : ''}{fired > 0 ? `, ${fired} fired` : ''})</span></div>
                 })}
               </div>
             </div>
@@ -3191,14 +3203,14 @@ function RangeDaysTab() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Past Range Days</h3>
-        <span className="text-xs text-neutral-400">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
+        <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Past Range Days</h3>
+        <span className="text-xs text-neutral-400 dark:text-neutral-500">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
       </div>
       {loading ? (
-        <p className="text-sm text-neutral-400">Loading…</p>
+        <p className="text-sm text-neutral-400 dark:text-neutral-500">Loading…</p>
       ) : sessions.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-neutral-300 p-10 text-center">
-          <p className="text-sm text-neutral-500">No range days yet — start one from the dashboard header.</p>
+        <div className="rounded-xl border border-dashed border-neutral-300 dark:border-neutral-600 p-10 text-center">
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">No range days yet — start one from the dashboard header.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -3209,16 +3221,16 @@ function RangeDaysTab() {
             const duration = mins != null ? `${Math.floor(mins / 60)}h ${mins % 60}m` : 'In progress'
             const isActive = !s.endedAt
             return (
-              <button key={s.id} onClick={() => setViewingId(s.id)} className="w-full text-left rounded-xl border border-neutral-200 bg-white p-4 hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
+              <button key={s.id} onClick={() => setViewingId(s.id)} className="w-full text-left rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-neutral-900">{started.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} · {duration}</p>
-                    <p className="text-xs text-neutral-400 mt-1">{started.toLocaleString()}{ended ? ` → ${ended.toLocaleString()}` : ''}</p>
-                    {s.note && <p className="text-sm text-neutral-600 mt-2 italic">“{s.note}”</p>}
+                    <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{started.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} · {duration}</p>
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">{started.toLocaleString()}{ended ? ` → ${ended.toLocaleString()}` : ''}</p>
+                    {s.note && <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-2 italic">“{s.note}”</p>}
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isActive ? 'bg-green-100 text-green-700' : 'bg-neutral-100 text-neutral-500'}`}>{isActive ? 'Active' : 'Completed'}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isActive ? 'bg-green-100 text-green-700' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400'}`}>{isActive ? 'Active' : 'Completed'}</span>
                 </div>
-                <p className="text-xs text-neutral-500 mt-3">View details →</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-3">View details →</p>
               </button>
             )
           })}
@@ -3286,37 +3298,37 @@ function ExportImportTab({ onImported }: { onImported?: () => void }) {
 
   return (
     <div className="max-w-2xl">
-      <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Backup & Restore</h3>
-      <p className="text-xs text-neutral-400 mt-1">Export a versioned JSON backup to move to a new phone/app, then restore it into another account. Includes weapons, cleanings (history), ammo types, transactions, range days — prices stored as dollars.</p>
+      <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Backup & Restore</h3>
+      <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Export a versioned JSON backup to move to a new phone/app, then restore it into another account. Includes weapons, cleanings (history), ammo types, transactions, range days — prices stored as dollars.</p>
 
-      <div className="mt-6 rounded-xl border border-neutral-200 bg-white p-5">
+      <div className="mt-6 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-5">
         <h4 className="text-sm font-semibold">Export</h4>
-        <p className="text-xs text-neutral-500 mt-1">Downloads <span className="font-mono">ay-armory-backup-YYYY-MM-DD.json</span> (version 1, includes cleaning history for export).</p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Downloads <span className="font-mono">ay-armory-backup-YYYY-MM-DD.json</span> (version 1, includes cleaning history for export).</p>
         <button onClick={handleExport} className="mt-3 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">Download Backup JSON</button>
       </div>
 
-      <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-5">
+      <div className="mt-4 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-5">
         <h4 className="text-sm font-semibold">Restore (Import)</h4>
-        <p className="text-xs text-neutral-500 mt-1">Pick a backup JSON exported from another account. Choose Merge (skip dupes) or Replace (wipe then restore).</p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Pick a backup JSON exported from another account. Choose Merge (skip dupes) or Replace (wipe then restore).</p>
         <div className="flex gap-2 mt-3">
-          <label className={`flex-1 flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer ${mode === 'merge' ? 'bg-black text-white border-black' : 'bg-white border-neutral-200'}`}>
+          <label className={`flex-1 flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer ${mode === 'merge' ? 'bg-black text-white border-black' : 'bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-700'}`}>
             <input type="radio" name="mode" checked={mode === 'merge'} onChange={() => setMode('merge')} className="accent-black" />
             <span className="text-sm">Merge</span>
           </label>
-          <label className={`flex-1 flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer ${mode === 'replace' ? 'bg-black text-white border-black' : 'bg-white border-neutral-200'}`}>
+          <label className={`flex-1 flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer ${mode === 'replace' ? 'bg-black text-white border-black' : 'bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-700'}`}>
             <input type="radio" name="mode" checked={mode === 'replace'} onChange={() => setMode('replace')} className="accent-black" />
             <span className="text-sm">Replace</span>
           </label>
         </div>
         <input ref={fileRef} type="file" accept=".json,application/json" onChange={onFile} className="mt-3 w-full text-sm" />
         {preview && (
-          <div className="mt-3 rounded-lg bg-neutral-50 border border-neutral-200 p-3 text-xs">
+          <div className="mt-3 rounded-lg bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 p-3 text-xs">
             <p className="font-semibold">Preview — v{preview.version} exported {preview.exportedAt ? new Date(preview.exportedAt).toLocaleString() : ''}</p>
-            <p className="text-neutral-500 mt-1">{preview.weapons?.length ?? 0} weapons · {preview.weaponCleanings?.length ?? 0} cleanings · {preview.ammoTypes?.length ?? 0} ammo types · {preview.ammoTransactions?.length ?? 0} transactions · {preview.rangeDaySessions?.length ?? 0} range days</p>
+            <p className="text-neutral-500 dark:text-neutral-400 mt-1">{preview.weapons?.length ?? 0} weapons · {preview.weaponCleanings?.length ?? 0} cleanings · {preview.ammoTypes?.length ?? 0} ammo types · {preview.ammoTransactions?.length ?? 0} transactions · {preview.rangeDaySessions?.length ?? 0} range days</p>
             <button onClick={handleImport} disabled={busy} className="mt-3 w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-40 cursor-pointer">{busy ? 'Importing…' : `Import as ${mode}`}</button>
           </div>
         )}
-        {status && <p className="text-xs mt-3 tabular-nums whitespace-pre-wrap border-t border-neutral-100 pt-3">{status}</p>}
+        {status && <p className="text-xs mt-3 tabular-nums whitespace-pre-wrap border-t border-neutral-100 dark:border-neutral-800 pt-3">{status}</p>}
       </div>
     </div>
   )
@@ -3326,13 +3338,15 @@ function ExportImportTab({ onImported }: { onImported?: () => void }) {
 
 type QuickAction = 'acquire' | 'expend' | 'adjust' | 'new-type' | null
 
-function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResumeRangeDay, onStartRangeDay }: {
+function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResumeRangeDay, onStartRangeDay, theme, onToggleTheme }: {
   user: User
   onLogout: () => void
   onRangeDayStart: (session: RangeDaySession) => void
   activeSession: RangeDaySession | null
   onResumeRangeDay: () => void
   onStartRangeDay: () => void
+  theme: 'light' | 'dark'
+  onToggleTheme: () => void
 }) {
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
@@ -3474,12 +3488,20 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <header className="border-b border-neutral-200 bg-white sticky top-0 z-10">
+    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
+      <header className="border-b border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 sticky top-0 z-10">
         <div className="mx-auto max-w-6xl flex items-center justify-between px-6 h-16">
           <h1 className="text-xl font-bold tracking-tight">ay-armory</h1>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-neutral-500">{user.email}</span>
+            <span className="text-sm text-neutral-500 dark:text-neutral-400">{user.email}</span>
+            <button onClick={onToggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="w-9 h-9 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer transition-colors flex items-center justify-center">
+              {theme === 'dark' ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21.75 13.1A9.5 9.5 0 1 1 10.9 2.25a7.5 7.5 0 0 0 10.85 10.85Z" /></svg>
+              )}
+            </button>
             <button onClick={onLogout}
               className="text-sm px-4 py-2 rounded-lg bg-black text-white cursor-pointer hover:opacity-80 transition-opacity">
               Logout
@@ -3489,7 +3511,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
       </header>
 
       <main className="mx-auto max-w-6xl px-6 py-8">
-        <h2 className="text-2xl font-semibold text-neutral-900 mb-6">
+        <h2 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100 mb-6">
           Welcome{user.firstName ? `, ${user.firstName}` : ''}
         </h2>
 
@@ -3497,7 +3519,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         <div className="flex justify-end gap-3 mb-6">
           <button
             onClick={() => setShowPpr(true)}
-            className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm border border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-50 transition-colors cursor-pointer">
+            className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer">
             🧮 PPR Calc
           </button>
           {activeSession ? (
@@ -3516,13 +3538,13 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b border-neutral-200 mb-6 mt-8 overflow-x-auto">
+        <div className="flex gap-1 border-b border-neutral-200 dark:border-neutral-700 mb-6 mt-8 overflow-x-auto">
           {(['inventory', 'ammo', 'types', 'weapons', 'history', 'range-days', 'backup'] as const).map(t => (
             <button key={t} onClick={() => { setTab(t); setViewingCaliberName(null); setViewingWeaponId(null); setActiveAction(null) }}
               className={`px-4 py-2 text-sm font-medium capitalize cursor-pointer transition-colors whitespace-nowrap ${
                 tab === t
-                  ? 'border-b-2 border-black text-black'
-                  : 'text-neutral-500 hover:text-neutral-700'
+                  ? 'border-b-2 border-black dark:border-white text-black dark:text-white'
+                  : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300'
               }`}>
               {t === 'weapons' ? 'Weapons' : t === 'types' ? 'Manage Types' : t === 'history' ? 'History' : t === 'ammo' ? 'Ammo' : t === 'range-days' ? 'Range Days' : t === 'backup' ? 'Backup' : 'Inventory'}
             </button>
@@ -3543,7 +3565,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
               onBack={() => setViewingCaliberName(null)}
             />
           ) : inventoryLoading ? (
-            <p className="text-neutral-400 text-sm">Loading inventory...</p>
+            <p className="text-neutral-400 dark:text-neutral-500 text-sm">Loading inventory...</p>
           ) : (
             <InventoryDashboard
               inventory={inventory}
@@ -3568,7 +3590,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
           ) : (
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">Your Ammo</h3>
+                <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Your Ammo</h3>
                 <button
                   onClick={() => setActiveAction(activeAction === 'acquire' ? null : 'acquire')}
                   className="text-sm px-3 py-1.5 bg-black text-white rounded-lg cursor-pointer hover:opacity-80"
@@ -3587,11 +3609,11 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
                 </div>
               )}
               {inventoryLoading ? (
-                <p className="text-neutral-400 text-sm">Loading inventory...</p>
+                <p className="text-neutral-400 dark:text-neutral-500 text-sm">Loading inventory...</p>
               ) : inventory.length === 0 ? (
                 <>
-                  <div className="rounded-xl border border-dashed border-neutral-300 p-10 text-center">
-                    <p className="text-neutral-500 mb-4">No ammo types yet — add some to get started.</p>
+                  <div className="rounded-xl border border-dashed border-neutral-300 dark:border-neutral-600 p-10 text-center">
+                    <p className="text-neutral-500 dark:text-neutral-400 mb-4">No ammo types yet — add some to get started.</p>
                     <button
                       onClick={() => setActiveAction(activeAction === 'new-type' ? null : 'new-type')}
                       className={`text-sm px-4 py-2 rounded-lg transition-opacity cursor-pointer ${activeAction === 'new-type' ? 'bg-neutral-600 text-white' : 'bg-black text-white hover:opacity-80'}`}
@@ -3609,32 +3631,32 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
                 <>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     {ammoGroups.map(group => (
-                      <div key={group.caliber} className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden flex flex-col">
+                      <div key={group.caliber} className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-sm overflow-hidden flex flex-col">
                         <button
                           onClick={() => setViewingCaliberName(group.caliber)}
-                          className="flex-1 p-5 text-left hover:bg-neutral-50 transition-colors cursor-pointer"
+                          className="flex-1 p-5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
                         >
                           <div className="flex items-start justify-between mb-1">
-                            <p className="text-lg font-bold text-neutral-900">{group.caliber}</p>
-                            <span className="ml-2 shrink-0 text-xs bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full">
+                            <p className="text-lg font-bold text-neutral-900 dark:text-neutral-100">{group.caliber}</p>
+                            <span className="ml-2 shrink-0 text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 px-2 py-0.5 rounded-full">
                               {group.items.length} type{group.items.length !== 1 ? 's' : ''}
                             </span>
                           </div>
                           <p className={`text-3xl font-bold mt-2 ${balanceColor(group.totalBalance)}`}>
                             {group.totalBalance.toLocaleString()}
                           </p>
-                          <p className="text-xs text-neutral-400 mt-1">rounds · tap for details</p>
+                          <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">rounds · tap for details</p>
                         </button>
-                        <div className="flex gap-2 px-3 py-3 border-t border-neutral-100 bg-neutral-50">
+                        <div className="flex gap-2 px-3 py-3 border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800">
                           <button
                             onClick={() => setActiveAction('adjust')}
-                            className="flex-1 text-xs px-2 py-1.5 bg-white border border-neutral-200 rounded-lg hover:border-neutral-400 cursor-pointer"
+                            className="flex-1 text-xs px-2 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg hover:border-neutral-400 cursor-pointer"
                           >
                             Adjust
                           </button>
                           <button
                             onClick={() => setViewingCaliberName(group.caliber)}
-                            className="flex-1 text-xs px-2 py-1.5 bg-white border border-neutral-200 rounded-lg hover:border-neutral-400 cursor-pointer"
+                            className="flex-1 text-xs px-2 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg hover:border-neutral-400 cursor-pointer"
                           >
                             History
                           </button>
@@ -3645,19 +3667,19 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
                   <div className="flex flex-wrap gap-2 mt-6">
                     <button
                       onClick={() => setActiveAction(activeAction === 'expend' ? null : 'expend')}
-                      className={`px-3 py-1.5 rounded-lg text-xs border cursor-pointer transition-colors ${activeAction === 'expend' ? 'bg-black text-white border-black' : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'}`}
+                      className={`px-3 py-1.5 rounded-lg text-xs border cursor-pointer transition-colors ${activeAction === 'expend' ? 'bg-black text-white border-black' : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400'}`}
                     >
                       - Expend
                     </button>
                     <button
                       onClick={() => setActiveAction(activeAction === 'adjust' ? null : 'adjust')}
-                      className={`px-3 py-1.5 rounded-lg text-xs border cursor-pointer transition-colors ${activeAction === 'adjust' ? 'bg-black text-white border-black' : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'}`}
+                      className={`px-3 py-1.5 rounded-lg text-xs border cursor-pointer transition-colors ${activeAction === 'adjust' ? 'bg-black text-white border-black' : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400'}`}
                     >
                       Adjust
                     </button>
                     <button
                       onClick={() => setActiveAction(activeAction === 'new-type' ? null : 'new-type')}
-                      className={`px-3 py-1.5 rounded-lg text-xs border cursor-pointer transition-colors ${activeAction === 'new-type' ? 'bg-black text-white border-black' : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'}`}
+                      className={`px-3 py-1.5 rounded-lg text-xs border cursor-pointer transition-colors ${activeAction === 'new-type' ? 'bg-black text-white border-black' : 'bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400'}`}
                     >
                       + New Type
                     </button>
@@ -3668,8 +3690,8 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
                     </QuickForm>
                   )}
                   {activeAction === 'expend' && ammoTypes.length === 0 && (
-                    <div className="rounded-xl border border-neutral-200 bg-white p-5 mt-4">
-                      <p className="text-sm text-neutral-500">Create an ammo type first.</p>
+                    <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-5 mt-4">
+                      <p className="text-sm text-neutral-500 dark:text-neutral-400">Create an ammo type first.</p>
                     </div>
                   )}
                   {activeAction === 'adjust' && ammoTypes.length > 0 && (
@@ -3778,6 +3800,18 @@ function App() {
   const [activeSession, setActiveSession] = useState<RangeDaySession | null>(null)
   const [page, setPage] = useState<'dashboard' | 'range-day' | 'range-day-start'>('dashboard')
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem('ay-armory-theme')
+      if (saved === 'light' || saved === 'dark') return saved
+    } catch { /* private mode — fall through to system preference */ }
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+    try { localStorage.setItem('ay-armory-theme', theme) } catch { /* private mode */ }
+  }, [theme])
 
   // On mount, restore session from localStorage
   useEffect(() => {
@@ -3831,7 +3865,7 @@ function App() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen text-neutral-500">
+      <div className="flex items-center justify-center min-h-screen text-neutral-500 dark:text-neutral-400">
         Loading...
       </div>
     )
@@ -3869,6 +3903,8 @@ function App() {
       activeSession={activeSession}
       onResumeRangeDay={() => setPage('range-day')}
       onStartRangeDay={() => setPage('range-day-start')}
+      theme={theme}
+      onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
     />
   )
 }
