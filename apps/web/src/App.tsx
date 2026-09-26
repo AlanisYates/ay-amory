@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 const TOKEN_KEY = 'ay-armory-token'
 const API_BASE = ''
@@ -23,6 +24,7 @@ type CaliberGroup = {
 type Transaction = {
   id: number; type: string; note: string | null
   occurredAt: string; price: number | null; vendor: string | null
+  rangeDaySessionId?: number | null
   entries?: { id: number; ammoTypeId: number; quantity: number; location: string; isBalancing: boolean }[]
 }
 
@@ -83,6 +85,9 @@ function badgeColor(type: string): string {
     case 'transfer': return 'bg-blue-100 text-blue-800'
     case 'range_day_start': return 'bg-purple-100 text-purple-800'
     case 'range_day_end': return 'bg-indigo-100 text-indigo-800'
+    case 'range_day_load': return 'bg-blue-100 text-blue-800'
+    case 'range_day_shot': return 'bg-red-100 text-red-800'
+    case 'range_day_return': return 'bg-amber-100 text-amber-800'
     default: return 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300'
   }
 }
@@ -95,8 +100,144 @@ function txLabel(type: string): string {
     case 'transfer': return 'Transfer'
     case 'range_day_start': return 'Range Start'
     case 'range_day_end': return 'Range End'
+    case 'range_day_load': return 'Loaded'
+    case 'range_day_shot': return 'Shot'
+    case 'range_day_return': return 'Returned'
     default: return type
   }
+}
+
+// Mechanical range-day transactions (bag/gun shuffling with no informational
+// value on their own). Hidden from flat history lists; sessions surface them
+// through the depletion ledger instead.
+const MECHANICAL_TX_TYPES = new Set(['range_day_start', 'range_day_load', 'range_day_return'])
+
+// Shared history grouping: range-day transactions collapse into session
+// blocks, newest first; standalone transactions stay flat and interleave
+// chronologically. Every block classifies as adding (in), depleting (out),
+// or neutral (flat) by its net.
+type HistoryRow = { tx: TxWithEntries; net: number; runningBalance: number }
+type HistoryBlock =
+  | { kind: 'single'; tx: TxWithEntries; net: number; runningBalance: number; newestAt: number }
+  | { kind: 'session'; sessionId: number; txs: HistoryRow[]; net: number; newestAt: number }
+
+type NetClass = 'in' | 'out' | 'flat'
+function classifyNet(net: number): NetClass { return net > 0 ? 'in' : net < 0 ? 'out' : 'flat' }
+
+function useHistoryBlocks(rows: HistoryRow[]): HistoryBlock[] {
+  return useMemo<HistoryBlock[]>(() => {
+    const sessionMap = new Map<number, HistoryRow[]>()
+    const singles: HistoryBlock[] = []
+    for (const r of rows) {
+      const sid = r.tx.rangeDaySessionId
+      if (sid != null) {
+        if (!sessionMap.has(sid)) sessionMap.set(sid, [])
+        sessionMap.get(sid)!.push(r)
+      } else {
+        singles.push({ kind: 'single', ...r, newestAt: new Date(r.tx.occurredAt).getTime() })
+      }
+    }
+    const sessions: HistoryBlock[] = [...sessionMap.entries()].map(([sessionId, txs]) => ({
+      kind: 'session' as const,
+      sessionId,
+      txs,
+      net: txs.reduce((s, r) => s + r.net, 0),
+      newestAt: Math.max(...txs.map(r => new Date(r.tx.occurredAt).getTime())),
+    }))
+    return [...sessions, ...singles].sort((a, b) => b.newestAt - a.newestAt)
+  }, [rows])
+}
+
+function HistoryFilter({ value, counts, onChange }: {
+  value: NetClass | 'all'
+  counts: Record<NetClass | 'all', number>
+  onChange: (v: NetClass | 'all') => void
+}) {
+  const opts: { v: NetClass | 'all'; label: string }[] = [
+    { v: 'all', label: `All · ${counts.all}` },
+    { v: 'in', label: `+ Adding · ${counts.in}` },
+    { v: 'out', label: `− Depleting · ${counts.out}` },
+    { v: 'flat', label: `= Neutral · ${counts.flat}` },
+  ]
+  return (
+    <div className="flex gap-1.5 mb-3 flex-wrap">
+      {opts.map(o => (
+        <button key={o.v} type="button" onClick={() => onChange(o.v)}
+          className={`px-2.5 py-1 rounded-full text-xs border cursor-pointer transition-colors ${value === o.v ? 'bg-black text-white border-black dark:bg-white dark:text-black dark:border-white' : 'bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400'}`}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Shared history UI ───────────────────────────────────────────────────────
+// One row language for every timeline in the app: date · chip · title ·
+// subtitle · right-aligned amount, with an optional expandable body.
+
+function TxChip({ type, label }: { type: string; label?: string }) {
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${badgeColor(type)}`}>
+      {label ?? txLabel(type)}
+    </span>
+  )
+}
+
+function BurndownTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  const rows = payload.filter((p: any) => p.value != null)
+  if (rows.length === 0) return null
+  return (
+    <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 shadow-md text-xs min-w-[160px]">
+      <p className="text-neutral-400 dark:text-neutral-500 mb-1">{label}</p>
+      {rows.map((p: any) => (
+        <div key={String(p.dataKey)} className="flex items-center gap-2 py-0.5">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.color ?? p.stroke }} />
+          <span className="text-neutral-600 dark:text-neutral-400 truncate max-w-[140px]">{p.name}</span>
+          <span className="ml-auto pl-3 font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{Number(p.value).toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function HistoryRow({ date, chip, title, subtitle, right, expanded, onToggle, children }: {
+  date: string
+  chip: React.ReactNode
+  title: React.ReactNode
+  subtitle?: React.ReactNode
+  right?: React.ReactNode
+  expanded?: boolean
+  onToggle?: () => void
+  children?: React.ReactNode
+}) {
+  const body = (
+    <>
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-neutral-400 dark:text-neutral-500 shrink-0">{date}</span>
+        {chip}
+        <span className="ml-auto font-semibold tabular-nums text-right">{right}</span>
+        {onToggle && <span className="text-xs text-neutral-400 dark:text-neutral-500 shrink-0">{expanded ? '▲' : '▼'}</span>}
+      </div>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
+        <span className="font-medium text-neutral-700 dark:text-neutral-300">{title}</span>
+        {subtitle ? <span> · {subtitle}</span> : null}
+      </p>
+      {expanded && onToggle && children != null && (
+        <div className="mt-2 pt-2 border-t border-neutral-100 dark:border-neutral-800">{children}</div>
+      )}
+    </>
+  )
+  if (!onToggle) {
+    return <div className="px-4 py-3">{body}</div>
+  }
+  return (
+    <button type="button" onClick={onToggle}
+      className="w-full text-left px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer transition-colors">
+      {body}
+      <span className="sr-only">{expanded ? 'Collapse' : 'Expand'}</span>
+    </button>
+  )
 }
 
 // ── Caliber data ──────────────────────────────────────────────────────────
@@ -806,38 +947,38 @@ function TransactionHistory({ ammoTypes }: { ammoTypes: AmmoType[] }) {
       ) : transactions.length === 0 ? (
         <p className="text-neutral-400 dark:text-neutral-500 text-sm">No transactions yet.</p>
       ) : (
-        <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-          {transactions.map(tx => (
-            <div key={tx.id}>
-              <button
-                onClick={() => loadEntries(tx.id)}
-                className="w-full text-left py-3 flex items-center gap-3 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer transition-colors"
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 overflow-hidden shadow-sm divide-y divide-neutral-100 dark:divide-neutral-800">
+          {transactions.map(tx => {
+            const expanded = expandedId === tx.id
+            return (
+              <HistoryRow key={tx.id}
+                date={new Date(tx.occurredAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                chip={<TxChip type={tx.type} />}
+                title={tx.note ?? txLabel(tx.type)}
+                expanded={expanded}
+                onToggle={() => loadEntries(tx.id)}
               >
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badgeColor(tx.type)}`}>{txLabel(tx.type)}</span>
-                <span className="text-sm text-neutral-500 dark:text-neutral-400">{new Date(tx.occurredAt).toLocaleDateString()}</span>
-                {tx.note && <span className="text-sm text-neutral-600 dark:text-neutral-400 truncate">{tx.note}</span>}
-                <span className="ml-auto text-neutral-400 dark:text-neutral-500 text-xs">{expandedId === tx.id ? '▲' : '▼'}</span>
-              </button>
-              {expandedId === tx.id && tx.entries && (
-                <div className="pl-4 pb-3 space-y-1">
-                  {tx.entries.filter(e => !e.isBalancing).map(e => (
-                    <div key={e.id} className="flex items-center gap-2 text-sm">
-                      <span className="text-neutral-500 dark:text-neutral-400">{typeForId(e.ammoTypeId)}</span>
-                      <span className={e.quantity > 0 ? 'text-green-700 font-medium' : 'text-red-600 font-medium'}>
-                        {e.quantity > 0 ? `+${e.quantity}` : e.quantity}
-                      </span>
-                      <span className="text-neutral-400 dark:text-neutral-500 text-xs">[{e.location}]</span>
-                    </div>
-                  ))}
-                  {tx.price != null && (
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                      Price: ${(tx.price / 100).toFixed(2)}{tx.vendor ? ` · ${tx.vendor}` : ''}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+                {tx.entries && (
+                  <div className="space-y-1">
+                    {tx.entries.filter(e => !e.isBalancing).map(e => (
+                      <div key={e.id} className="flex items-center gap-2 text-sm">
+                        <span className="text-neutral-500 dark:text-neutral-400">{typeForId(e.ammoTypeId)}</span>
+                        <span className={e.quantity > 0 ? 'text-green-700 font-medium' : 'text-red-600 font-medium'}>
+                          {e.quantity > 0 ? `+${e.quantity}` : e.quantity}
+                        </span>
+                        <span className="text-neutral-400 dark:text-neutral-500 text-xs">[{e.location}]</span>
+                      </div>
+                    ))}
+                    {tx.price != null && (
+                      <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                        Price: ${(tx.price / 100).toFixed(2)}{tx.vendor ? ` · ${tx.vendor}` : ''}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </HistoryRow>
+            )
+          })}
         </div>
       )}
     </div>
@@ -1777,12 +1918,14 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
 
 // ── Ammo Type Detail ──────────────────────────────────────────────────────
 
-type EntryRow = { id: number; ammoTypeId: number; quantity: number; location: string; isBalancing: boolean }
-type TxWithEntries = Transaction & { entries: EntryRow[] }
+type EntryRow = { id: number; ammoTypeId: number; quantity: number; location: string; isBalancing: boolean; weaponId?: number | null }
+type TxWithEntries = Omit<Transaction, 'entries'> & { entries: EntryRow[] }
 
-function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryItem; onBack: () => void; refreshKey?: number }) {
+function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { item: InventoryItem; onBack: () => void; refreshKey?: number; onWeaponClick?: (weaponId: number) => void }) {
   const [transactions, setTransactions] = useState<TxWithEntries[]>([])
+  const [weapons, setWeapons] = useState<Weapon[]>([])
   const [loading, setLoading] = useState(true)
+  const [expandedSessions, setExpandedSessions] = useState<number[] | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -1792,6 +1935,13 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryI
       .catch(() => setTransactions([]))
       .finally(() => setLoading(false))
   }, [item.id, refreshKey])
+
+  useEffect(() => {
+    apiFetch('/weapons')
+      .then(r => r.ok ? r.json() : [])
+      .then(setWeapons)
+      .catch(() => {})
+  }, [])
 
   // Net change per transaction = sum of ALL non-balancing entries for this ammo type.
   // Equity (balancing) entries are excluded — they're accounting artefacts, not real rounds.
@@ -1823,6 +1973,124 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryI
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions])
 
+  // Group range-day transactions (start → shots → end) into collapsible
+  // session blocks, newest first; standalone transactions stay flat.
+  const blocks = useHistoryBlocks(rows)
+  const [historyFilter, setHistoryFilter] = useState<NetClass | 'all'>('all')
+
+  const historyCounts = useMemo(() => {
+    const counts: Record<NetClass | 'all', number> = { all: blocks.length, in: 0, out: 0, flat: 0 }
+    for (const b of blocks) counts[classifyNet(b.net)] += 1
+    return counts
+  }, [blocks])
+  const visibleBlocks = historyFilter === 'all' ? blocks : blocks.filter(b => classifyNet(b.net) === historyFilter)
+
+  const defaultExpanded = blocks.find(b => b.kind === 'session')
+  const expandedIds = expandedSessions ?? (defaultExpanded && defaultExpanded.kind === 'session' ? [defaultExpanded.sessionId] : [])
+  const toggleSession = (sessionId: number) => {
+    const base = expandedSessions ?? (defaultExpanded && defaultExpanded.kind === 'session' ? [defaultExpanded.sessionId] : [])
+    setExpandedSessions(base.includes(sessionId) ? base.filter(id => id !== sessionId) : [...base, sessionId])
+  }
+
+  const sessionMeta = (txs: HistoryRow[]) => {
+    const start = txs.find(r => r.tx.type === 'range_day_start')
+    const note = start?.tx.note ?? txs.find(r => r.tx.note)?.tx.note ?? 'Range day'
+    const oldest = txs[txs.length - 1].tx.occurredAt
+    return { note, oldest, balance: txs[0].runningBalance }
+  }
+
+  const renderTxRow = ({ tx, net, runningBalance }: HistoryRow) => {
+    const shotW = shotWeaponName(tx)
+    return (
+      <tr key={tx.id} className="border-b border-neutral-50 last:border-0 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
+        <td className="px-3 sm:px-4 py-3 text-neutral-500 dark:text-neutral-400 whitespace-nowrap">
+          {new Date(tx.occurredAt).toLocaleDateString(undefined, {
+            month: 'short', day: 'numeric', year: 'numeric',
+          })}
+        </td>
+        <td className="px-3 sm:px-4 py-3 whitespace-nowrap">
+          <TxChip type={tx.type} />
+        </td>
+        <td className="px-3 sm:px-4 py-3 text-neutral-600 dark:text-neutral-400 max-w-[200px] truncate">
+          {shotW
+            ? <span>{shotW}{tx.note ? <span className="text-neutral-400 dark:text-neutral-500"> · {tx.note}</span> : null}</span>
+            : (tx.note ?? <span className="text-neutral-300">—</span>)}
+        </td>
+        <td className="px-3 sm:px-4 py-3 text-right tabular-nums whitespace-nowrap">
+          {tx.price != null ? (
+            <span className="text-neutral-700 dark:text-neutral-300">
+              ${(tx.price / 100).toFixed(2)}
+              {net > 0 && <span className="text-neutral-400 dark:text-neutral-500 text-xs ml-1">(${(tx.price / net / 100).toFixed(2)}/rd)</span>}
+            </span>
+          ) : (
+            <span className="text-neutral-300">—</span>
+          )}
+        </td>
+        <td className="px-3 sm:px-4 py-3 text-right">
+          {netLabel(net, tx)}
+        </td>
+        <td className="px-3 sm:px-4 py-3 text-right font-medium tabular-nums text-neutral-700 dark:text-neutral-300">
+          {runningBalance.toLocaleString()}
+        </td>
+      </tr>
+    )
+  }
+
+  const renderSessionNet = (net: number) => net === 0
+    ? <span className="text-neutral-400 dark:text-neutral-500 text-sm">—</span>
+    : (
+      <span className={`font-semibold tabular-nums ${net > 0 ? 'text-green-700' : 'text-red-600'}`}>
+        {net > 0 ? `+${net.toLocaleString()}` : net.toLocaleString()}
+      </span>
+    )
+
+  // Depletion ledger prototype: start (in) → shots (out) → end (back/gone).
+  const renderSessionLedger = (sessionId: number, txs: HistoryRow[]) => {
+    const chronological = [...txs].reverse()
+    const tookIn = chronological
+      .filter(r => r.tx.type === 'range_day_start')
+      .flatMap(r => r.tx.entries)
+      .filter(e => !e.isBalancing && e.ammoTypeId === item.id && e.location === 'bag' && e.quantity > 0)
+      .reduce((s, e) => s + e.quantity, 0)
+    const shots = chronological.flatMap(r => r.tx.type === 'range_day_shot'
+      ? [{ at: r.tx.occurredAt, rounds: r.tx.entries.filter(e => !e.isBalancing && e.ammoTypeId === item.id && e.quantity < 0).reduce((s, e) => s - e.quantity, 0), weapon: shotWeaponName(r.tx), note: r.tx.note }]
+      : [])
+    const returned = chronological
+      .filter(r => r.tx.type === 'range_day_end')
+      .flatMap(r => r.tx.entries)
+      .filter(e => !e.isBalancing && e.ammoTypeId === item.id && e.location === 'storage' && e.quantity > 0)
+      .reduce((s, e) => s + e.quantity, 0)
+    return (
+      <tr key={`ledger-${sessionId}`}>
+        <td colSpan={6} className="px-3 sm:px-4 py-3 bg-neutral-50/60 dark:bg-neutral-800/40">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-100 text-purple-800">IN</span>
+            <span className="text-neutral-600 dark:text-neutral-400">took {tookIn.toLocaleString()} to bag</span>
+            <span className="ml-auto font-semibold tabular-nums text-green-700">+{tookIn.toLocaleString()}</span>
+          </div>
+          <div className="mt-2 ml-1 border-l-2 border-neutral-200 dark:border-neutral-700 pl-3">
+            <div className="space-y-1">
+              {shots.map((s, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-800">OUT</span>
+                  <span className="text-neutral-600 dark:text-neutral-400 truncate">
+                    {s.rounds.toLocaleString()} rds{s.weapon ? ` · ${s.weapon}` : ''}{s.note ? ` · ${s.note}` : ''}
+                    <span className="text-neutral-400 dark:text-neutral-500"> · {new Date(s.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span>
+                  </span>
+                  <span className="ml-auto font-semibold tabular-nums text-red-600">−{s.rounds.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-sm mt-2">
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-indigo-100 text-indigo-800">BACK</span>
+            <span className="text-neutral-600 dark:text-neutral-400">returned {returned.toLocaleString()} · gone {(tookIn - returned).toLocaleString()}</span>
+            <span className="ml-auto font-semibold tabular-nums text-neutral-700 dark:text-neutral-300">{(tookIn - returned) <= 0 ? '±0' : `−${(tookIn - returned).toLocaleString()}`}</span>
+          </div>
+        </td>
+      </tr>
+    )
+  }
   const avgPrice = useMemo(() => {
     let totalCents = 0
     let totalRounds = 0
@@ -1833,6 +2101,66 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryI
     }
     if (totalRounds === 0) return null
     return { perRound: totalCents / totalRounds / 100, totalCents, totalRounds }
+  }, [transactions, item.id])
+
+  // Rounds fired per weapon — from range_day_shot entries (exact; end-of-day
+  // auto-unloads never carry the range_day_shot type so they can't leak in).
+  const byWeapon = useMemo(() => {
+    const m = new Map<number, number>()
+    for (const tx of transactions) {
+      if (tx.type !== 'range_day_shot') continue
+      for (const e of tx.entries) {
+        if (!e.isBalancing && e.ammoTypeId === item.id && e.weaponId != null && e.quantity < 0) {
+          m.set(e.weaponId, (m.get(e.weaponId) ?? 0) + -e.quantity)
+        }
+      }
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1])
+  }, [transactions, item.id])
+
+  const weaponName = (id: number) => weapons.find(w => w.id === id)?.name ?? `Weapon #${id}`
+
+  const shotWeaponName = (tx: TxWithEntries) => {
+    if (tx.type !== 'range_day_shot') return null
+    const wId = tx.entries.find(e => !e.isBalancing && e.ammoTypeId === item.id && e.weaponId != null)?.weaponId
+    return wId != null ? weaponName(wId) : null
+  }
+
+  // Rounds fired per week, last 12 weeks.
+  const usage = useMemo(() => {
+    const now = Date.now()
+    const buckets = Array.from({ length: 12 }, (_, i) => ({
+      rounds: 0,
+      start: now - (11 - i) * 7 * 86400000 - 6 * 86400000,
+    }))
+    for (const tx of transactions) {
+      if (tx.type !== 'range_day_shot') continue
+      const rounds = tx.entries
+        .filter(e => !e.isBalancing && e.ammoTypeId === item.id && e.weaponId != null && e.quantity < 0)
+        .reduce((s, e) => s - e.quantity, 0)
+      if (rounds <= 0) continue
+      const idx = 11 - Math.floor((now - new Date(tx.occurredAt).getTime()) / (7 * 86400000))
+      if (idx >= 0 && idx < 12) buckets[idx].rounds += rounds
+    }
+    return buckets.map((b, i) => ({
+      key: i,
+      rounds: b.rounds,
+      label: new Date(b.start).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }),
+    }))
+  }, [transactions, item.id])
+
+  const usageMax = Math.max(1, ...usage.map(w => w.rounds))
+  const usageTotal = usage.reduce((s, w) => s + w.rounds, 0)
+  const totalFired = byWeapon.reduce((s, [, r]) => s + r, 0)
+
+  const totalBought = useMemo(() => {
+    let sum = 0
+    for (const tx of transactions) {
+      if (tx.type !== 'acquisition') continue
+      const net = tx.entries.filter(e => !e.isBalancing && e.ammoTypeId === item.id).reduce((s, e) => s + e.quantity, 0)
+      if (net > 0) sum += net
+    }
+    return sum
   }, [transactions, item.id])
 
   function netLabel(net: number, tx: TxWithEntries): React.ReactNode {
@@ -1865,38 +2193,72 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryI
         </button>
       </div>
 
-      {/* Ammo type card */}
-      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-8">
-        <div className="flex items-start justify-between flex-wrap gap-2">
-          <div>
-            <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{item.name}</h2>
-            <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              <span className="bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">{item.caliber}</span>
-              {item.grain && <span>{item.grain}gr</span>}
-              {item.brand && <span>· {item.brand}</span>}
-              {item.description && <span>· {item.description}</span>}
-            </div>
+      {/* Title — hero image slots in here when ammo types gain an imageUrl */}
+      <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{item.name}</h2>
+      <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+        <span className="bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">{item.caliber}</span>
+        {item.grain && <span>{item.grain}gr</span>}
+        {item.brand && <span>· {item.brand}</span>}
+        {item.description && <span>· {item.description}</span>}
+      </div>
+      <p className="mt-1.5 text-[17px] text-neutral-900 dark:text-neutral-100">
+        {avgPrice
+          ? <><b className="tabular-nums">${avgPrice.perRound.toFixed(2)}</b><span className="text-sm text-neutral-500 dark:text-neutral-400"> avg/rd · </span></>
+          : null}
+        <span className="text-sm text-neutral-500 dark:text-neutral-400">{item.balance.toLocaleString()} in storage</span>
+      </p>
+
+      {/* Stats card */}
+      <div className="rounded-[20px] p-5 mt-4 bg-[#191d2b] text-white">
+        <p className="text-[10px] tracking-[1.5px] text-[#9aa0b4] font-semibold">AMMO · LIFETIME</p>
+        <div className="flex mt-3">
+          <div className="flex-1">
+            <p className="text-[9px] tracking-[1px] text-[#9aa0b4]">AVG PAID</p>
+            <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `${avgPrice.perRound.toFixed(2)}` : '—'}</p>
           </div>
-          <div className="text-right">
-            <p className={`text-4xl font-bold ${balanceColor(item.balance)}`}>
-              {item.balance.toLocaleString()}
-            </p>
-            <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">rounds in storage</p>
+          <div className="flex-1">
+            <p className="text-[9px] tracking-[1px] text-[#9aa0b4]">BOUGHT</p>
+            <p className="text-[15px] font-bold tabular-nums">{totalBought > 0 ? `${totalBought.toLocaleString()}` : '—'}</p>
+          </div>
+          <div className="flex-1">
+            <p className="text-[9px] tracking-[1px] text-[#9aa0b4]">SPENT</p>
+            <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `${(avgPrice.totalCents / 100).toFixed(2)}` : '—'}</p>
+          </div>
+          <div className="flex-1">
+            <p className="text-[9px] tracking-[1px] text-[#9aa0b4]">FIRED</p>
+            <p className="text-[15px] font-bold tabular-nums">{totalFired > 0 ? `${totalFired.toLocaleString()}` : '—'}</p>
           </div>
         </div>
-        {avgPrice && (
-          <div className="mt-4 pt-4 border-t border-neutral-100 dark:border-neutral-800 flex gap-6 text-sm">
-            <div>
-              <p className="text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Avg price / round</p>
-              <p className="font-semibold text-neutral-900 dark:text-neutral-100 tabular-nums">${avgPrice.perRound.toFixed(2)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Total tracked</p>
-              <p className="font-medium text-neutral-600 dark:text-neutral-400 tabular-nums">{avgPrice.totalRounds.toLocaleString()} rds · ${(avgPrice.totalCents / 100).toFixed(2)}</p>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Usage */}
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mt-4">
+        <div className="flex items-baseline justify-between mb-2">
+          <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Usage</p>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 tabular-nums">{usageTotal.toLocaleString()} rds / 12 wks</p>
+        </div>
+        <div className="flex items-end gap-1 h-16">
+          {usage.map(w => (
+            <div key={w.key} title={`Wk of ${w.label} · ${w.rounds.toLocaleString()} rds`} className="flex-1 flex flex-col justify-end h-full">
+              <div className={`${w.rounds > 0 ? 'bg-neutral-900 dark:bg-neutral-100' : 'bg-neutral-200 dark:bg-neutral-700'} rounded-sm w-full`} style={{ height: `${w.rounds > 0 ? Math.max(8, (w.rounds / usageMax) * 100) : 6}%` }} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Fired through — tap a weapon to open its detail page */}
+      {byWeapon.length > 0 && (
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-6 py-2 mt-4 shadow-sm">
+          {byWeapon.map(([weaponId, rounds]) => (
+            <button key={weaponId} type="button" onClick={() => onWeaponClick?.(weaponId)}
+              className="flex items-center gap-3 py-3 border-b border-neutral-100 dark:border-neutral-800 last:border-0 text-sm w-full text-left hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer transition-colors">
+              <span className="text-neutral-700 dark:text-neutral-300 font-medium truncate">{weaponName(weaponId)}</span>
+              <span className="ml-auto font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{rounds.toLocaleString()} rds</span>
+              <span className="text-neutral-300">›</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Transaction history */}
       <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-3">
@@ -1910,52 +2272,62 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryI
           <p className="text-neutral-400 dark:text-neutral-500 text-sm">No transactions yet for this ammo type.</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 overflow-hidden shadow-sm">
-          <table className="w-full text-sm">
-            <thead>
+        <HistoryFilter value={historyFilter} counts={historyCounts} onChange={setHistoryFilter} />
+      )}
+      {!loading && blocks.length > 0 && visibleBlocks.length === 0 && (
+        <p className="text-neutral-400 dark:text-neutral-500 text-sm">No matching events for this filter.</p>
+      )}
+      {!loading && visibleBlocks.length > 0 && (
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 overflow-auto shadow-sm max-h-[70vh]">
+          <table className="w-full text-sm min-w-[640px]">
+            <thead className="sticky top-0 bg-white dark:bg-neutral-900 z-[1]">
               <tr className="border-b border-neutral-100 dark:border-neutral-800 text-left text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Note</th>
-                <th className="px-4 py-3 text-right">Price paid</th>
-                <th className="px-4 py-3 text-right">Change</th>
-                <th className="px-4 py-3 text-right">Balance</th>
+                <th className="px-3 sm:px-4 py-3">Date</th>
+                <th className="px-3 sm:px-4 py-3">Type</th>
+                <th className="px-3 sm:px-4 py-3">Note</th>
+                <th className="px-3 sm:px-4 py-3 text-right">Price paid</th>
+                <th className="px-3 sm:px-4 py-3 text-right">Change</th>
+                <th className="px-3 sm:px-4 py-3 text-right">Balance</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ tx, net, runningBalance }) => (
-                <tr key={tx.id} className="border-b border-neutral-50 last:border-0 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
-                  <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400 whitespace-nowrap">
-                    {new Date(tx.occurredAt).toLocaleDateString(undefined, {
-                      month: 'short', day: 'numeric', year: 'numeric',
-                    })}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badgeColor(tx.type)}`}>
-                      {txLabel(tx.type)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400 max-w-[200px] truncate">
-                    {tx.note ?? <span className="text-neutral-300">—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
-                    {tx.price != null ? (
-                      <span className="text-neutral-700 dark:text-neutral-300">
-                        ${(tx.price / 100).toFixed(2)}
-                        {net > 0 && <span className="text-neutral-400 dark:text-neutral-500 text-xs ml-1">(${(tx.price / net / 100).toFixed(2)}/rd)</span>}
-                      </span>
-                    ) : (
-                      <span className="text-neutral-300">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {netLabel(net, tx)}
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium tabular-nums text-neutral-700 dark:text-neutral-300">
-                    {runningBalance.toLocaleString()}
-                  </td>
-                </tr>
-              ))}
+              {visibleBlocks.flatMap(block => block.kind === 'single' ? (
+                [renderTxRow(block)]
+              ) : (() => {
+                const meta = sessionMeta(block.txs)
+                const expanded = expandedIds.includes(block.sessionId)
+                return [
+                  (
+                    <tr key={`session-${block.sessionId}`} onClick={() => toggleSession(block.sessionId)}
+                      className="border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/60 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition-colors">
+                      <td className="px-3 sm:px-4 py-3 text-neutral-500 dark:text-neutral-400 whitespace-nowrap">
+                        {new Date(meta.oldest).toLocaleDateString(undefined, {
+                          month: 'short', day: 'numeric', year: 'numeric',
+                        })}
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 whitespace-nowrap">
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-100 text-purple-800">
+                          Range day
+                        </span>
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 text-neutral-600 dark:text-neutral-400 max-w-[200px] truncate">
+                        {meta.note} <span className="text-neutral-400 dark:text-neutral-500">· {block.txs.length} events</span>
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 text-right tabular-nums whitespace-nowrap">
+                        <span className="text-neutral-300">—</span>
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 text-right">
+                        {renderSessionNet(block.net)}
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 text-right font-medium tabular-nums text-neutral-700 dark:text-neutral-300 whitespace-nowrap">
+                        {meta.balance.toLocaleString()}
+                        <span className="ml-2 text-xs text-neutral-400 dark:text-neutral-500">{expanded ? '▲' : '▼'}</span>
+                      </td>
+                    </tr>
+                  ),
+                  ...(expanded ? [renderSessionLedger(block.sessionId, block.txs)] : []),
+                ]
+              })())}
             </tbody>
           </table>
         </div>
@@ -1966,10 +2338,12 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0 }: { item: InventoryI
 
 // ── Caliber Detail View ───────────────────────────────────────────────────
 
-function CaliberDetailView({ group, refreshKey = 0, onBack }: { group: CaliberGroup; refreshKey?: number; onBack: () => void }) {
+function CaliberDetailView({ group, refreshKey = 0, onBack, onWeaponClick }: { group: CaliberGroup; refreshKey?: number; onBack: () => void; onWeaponClick?: (weaponId: number) => void }) {
   const [txMap, setTxMap] = useState<Map<number, TxWithEntries>>(new Map())
   const [loading, setLoading] = useState(true)
   const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null)
+  const [expandedSessions, setExpandedSessions] = useState<number[] | null>(null)
+  const [historyFilter, setHistoryFilter] = useState<NetClass | 'all'>('all')
 
   const typeIds = useMemo(() => new Set(group.items.map(i => i.id)), [group])
 
@@ -2009,9 +2383,112 @@ function CaliberDetailView({ group, refreshKey = 0, onBack }: { group: CaliberGr
     }).reverse()
   }, [txMap, typeIds])
 
+  const blocks = useHistoryBlocks(rows)
+
+  const historyCounts = useMemo(() => {
+    const counts: Record<NetClass | 'all', number> = { all: blocks.length, in: 0, out: 0, flat: 0 }
+    for (const b of blocks) counts[classifyNet(b.net)] += 1
+    return counts
+  }, [blocks])
+  const visibleBlocks = historyFilter === 'all' ? blocks : blocks.filter(b => classifyNet(b.net) === historyFilter)
+
+  const defaultExpanded = blocks.find(b => b.kind === 'session')
+  const expandedIds = expandedSessions ?? (defaultExpanded && defaultExpanded.kind === 'session' ? [defaultExpanded.sessionId] : [])
+  const toggleSession = (sessionId: number) => {
+    const base = expandedSessions ?? (defaultExpanded && defaultExpanded.kind === 'session' ? [defaultExpanded.sessionId] : [])
+    setExpandedSessions(base.includes(sessionId) ? base.filter(id => id !== sessionId) : [...base, sessionId])
+  }
+
+  const sessionMeta = (txs: HistoryRow[]) => {
+    const start = txs.find(r => r.tx.type === 'range_day_start')
+    const note = start?.tx.note ?? txs.find(r => r.tx.note)?.tx.note ?? 'Range day'
+    const oldest = txs[txs.length - 1].tx.occurredAt
+    return { note, oldest, balance: txs[0].runningBalance }
+  }
+
+  // Burn-down: per-ammo-type running balance over time, shaped for Recharts.
+  const burndown = useMemo(() => {
+    const perType = group.items.map(item => {
+      const pts = [...txMap.values()]
+        .map(tx => ({
+          at: new Date(tx.occurredAt).getTime(),
+          net: tx.entries.filter(e => !e.isBalancing && e.ammoTypeId === item.id).reduce((s, e) => s + e.quantity, 0),
+        }))
+        .filter(p => p.net !== 0)
+        .sort((a, b) => a.at - b.at)
+      let run = 0
+      return { item, steps: pts.map(p => { run += p.net; return { at: p.at, bal: run } }) }
+    }).filter(s => s.steps.length > 0)
+    if (perType.length === 0) return null
+    const times = [...new Set(perType.flatMap(s => s.steps.map(p => p.at)))].sort((a, b) => a - b)
+    const bals = new Map<number, number>()
+    const rows = times.map(at => {
+      const row: Record<string, number | string | null> = {
+        t: at,
+        label: new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      }
+      for (const s of perType) {
+        for (const p of s.steps) {
+          if (p.at <= at) bals.set(s.item.id, p.bal)
+        }
+        row[`a${s.item.id}`] = bals.has(s.item.id) ? bals.get(s.item.id)! : null
+      }
+      return row
+    })
+    const colors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
+    return {
+      rows,
+      lines: perType.map((s, i) => ({
+        key: `a${s.item.id}`,
+        name: s.item.name,
+        color: colors[i % colors.length],
+        current: s.steps[s.steps.length - 1].bal,
+      })),
+      minLabel: new Date(times[0]).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }),
+      maxLabel: new Date(times[times.length - 1]).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }),
+    }
+  }, [txMap, group.items])
+
+  const renderCaliberRow = ({ tx, net, runningBalance }: HistoryRow) => (
+    <tr key={tx.id} className="border-b border-neutral-50 last:border-0 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
+      <td className="px-3 sm:px-4 py-3 text-neutral-500 dark:text-neutral-400 whitespace-nowrap">
+        {new Date(tx.occurredAt).toLocaleDateString(undefined, {
+          month: 'short', day: 'numeric', year: 'numeric',
+        })}
+      </td>
+      <td className="px-3 sm:px-4 py-3 whitespace-nowrap">
+        <TxChip type={tx.type} />
+      </td>
+      <td className="px-3 sm:px-4 py-3 text-neutral-600 dark:text-neutral-400 max-w-[200px] truncate">
+        {tx.note ?? <span className="text-neutral-300">—</span>}
+      </td>
+      <td className="px-3 sm:px-4 py-3 text-right">
+        {net === 0
+          ? <span className="text-neutral-400 dark:text-neutral-500 text-sm">—</span>
+          : (
+            <span className={`font-semibold tabular-nums ${net > 0 ? 'text-green-700' : 'text-red-600'}`}>
+              {net > 0 ? `+${net.toLocaleString()}` : net.toLocaleString()}
+            </span>
+          )
+        }
+      </td>
+      <td className="px-3 sm:px-4 py-3 text-right font-medium tabular-nums text-neutral-700 dark:text-neutral-300">
+        {runningBalance.toLocaleString()}
+      </td>
+    </tr>
+  )
+
+  const renderCaliberSessionNet = (net: number) => net === 0
+    ? <span className="text-neutral-400 dark:text-neutral-500 text-sm">—</span>
+    : (
+      <span className={`font-semibold tabular-nums ${net > 0 ? 'text-green-700' : 'text-red-600'}`}>
+        {net > 0 ? `+${net.toLocaleString()}` : net.toLocaleString()}
+      </span>
+    )
+
   if (viewingItem) {
     const liveItem = group.items.find(i => i.id === viewingItem.id) ?? viewingItem
-    return <AmmoTypeDetailView item={liveItem} refreshKey={refreshKey} onBack={() => setViewingItem(null)} />
+    return <AmmoTypeDetailView item={liveItem} refreshKey={refreshKey} onBack={() => setViewingItem(null)} onWeaponClick={onWeaponClick} />
   }
 
   return (
@@ -2044,7 +2521,45 @@ function CaliberDetailView({ group, refreshKey = 0, onBack }: { group: CaliberGr
         </div>
       </div>
 
+      {/* Burn-down per ammo type */}
+      {burndown && (
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-8">
+          <div className="flex items-baseline justify-between mb-2">
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Burn-down</p>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500 tabular-nums">{burndown.minLabel} → {burndown.maxLabel}</p>
+          </div>
+          <div className="h-[220px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={burndown.rows} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
+                <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+                <XAxis dataKey="t" tickLine={false} axisLine={false} minTickGap={40}
+                  tick={{ fill: 'var(--chart-tick)', fontSize: 12 }}
+                  tickFormatter={(t: number) => new Date(t).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })} />
+                <YAxis tickLine={false} axisLine={false} width={44}
+                  tick={{ fill: 'var(--chart-tick)', fontSize: 12 }}
+                  tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k` : `${v}`} />
+                <Tooltip content={<BurndownTooltip />} cursor={{ stroke: 'var(--chart-grid)' }} />
+                {burndown.lines.map(l => (
+                  <Line key={l.key} dataKey={l.key} name={l.name} type="stepAfter"
+                    stroke={l.color} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3">
+            {burndown.lines.map(l => (
+              <span key={l.key} className="flex items-center gap-1.5 text-xs">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: l.color }} />
+                <span className="truncate max-w-[160px] text-neutral-700 dark:text-neutral-300 font-medium">{l.name}</span>
+                <span className="tabular-nums font-semibold text-neutral-900 dark:text-neutral-100">{l.current.toLocaleString()}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Per-type breakdown */}
+      <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-3">Ammo types</p>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
         {group.items.map(item => (
           <button
@@ -2076,48 +2591,58 @@ function CaliberDetailView({ group, refreshKey = 0, onBack }: { group: CaliberGr
           <p className="text-neutral-400 dark:text-neutral-500 text-sm">No transactions yet for this caliber.</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 overflow-hidden shadow-sm">
-          <table className="w-full text-sm">
-            <thead>
+        <HistoryFilter value={historyFilter} counts={historyCounts} onChange={setHistoryFilter} />
+      )}
+      {!loading && blocks.length > 0 && visibleBlocks.length === 0 && (
+        <p className="text-neutral-400 dark:text-neutral-500 text-sm">No matching events for this filter.</p>
+      )}
+      {!loading && visibleBlocks.length > 0 && (
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 overflow-auto shadow-sm max-h-[70vh]">
+          <table className="w-full text-sm min-w-[560px]">
+            <thead className="sticky top-0 bg-white dark:bg-neutral-900 z-[1]">
               <tr className="border-b border-neutral-100 dark:border-neutral-800 text-left text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Note</th>
-                <th className="px-4 py-3 text-right">Change</th>
-                <th className="px-4 py-3 text-right">Balance</th>
+                <th className="px-3 sm:px-4 py-3">Date</th>
+                <th className="px-3 sm:px-4 py-3">Type</th>
+                <th className="px-3 sm:px-4 py-3">Note</th>
+                <th className="px-3 sm:px-4 py-3 text-right">Change</th>
+                <th className="px-3 sm:px-4 py-3 text-right">Balance</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ tx, net, runningBalance }) => (
-                <tr key={tx.id} className="border-b border-neutral-50 last:border-0 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
-                  <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400 whitespace-nowrap">
-                    {new Date(tx.occurredAt).toLocaleDateString(undefined, {
-                      month: 'short', day: 'numeric', year: 'numeric',
-                    })}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badgeColor(tx.type)}`}>
-                      {txLabel(tx.type)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400 max-w-[200px] truncate">
-                    {tx.note ?? <span className="text-neutral-300">—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {net === 0
-                      ? <span className="text-neutral-400 dark:text-neutral-500 text-sm">—</span>
-                      : (
-                        <span className={`font-semibold tabular-nums ${net > 0 ? 'text-green-700' : 'text-red-600'}`}>
-                          {net > 0 ? `+${net.toLocaleString()}` : net.toLocaleString()}
+              {visibleBlocks.flatMap(block => block.kind === 'single' ? (
+                [renderCaliberRow(block)]
+              ) : (() => {
+                const meta = sessionMeta(block.txs)
+                const expanded = expandedIds.includes(block.sessionId)
+                return [
+                  (
+                    <tr key={`session-${block.sessionId}`} onClick={() => toggleSession(block.sessionId)}
+                      className="border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/60 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition-colors">
+                      <td className="px-3 sm:px-4 py-3 text-neutral-500 dark:text-neutral-400 whitespace-nowrap">
+                        {new Date(meta.oldest).toLocaleDateString(undefined, {
+                          month: 'short', day: 'numeric', year: 'numeric',
+                        })}
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 whitespace-nowrap">
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-100 text-purple-800">
+                          Range day
                         </span>
-                      )
-                    }
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium tabular-nums text-neutral-700 dark:text-neutral-300">
-                    {runningBalance.toLocaleString()}
-                  </td>
-                </tr>
-              ))}
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 text-neutral-600 dark:text-neutral-400 max-w-[200px] truncate">
+                        {meta.note} <span className="text-neutral-400 dark:text-neutral-500">· {block.txs.length} events</span>
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 text-right">
+                        {renderCaliberSessionNet(block.net)}
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 text-right font-medium tabular-nums text-neutral-700 dark:text-neutral-300 whitespace-nowrap">
+                        {meta.balance.toLocaleString()}
+                        <span className="ml-2 text-xs text-neutral-400 dark:text-neutral-500">{expanded ? '▲' : '▼'}</span>
+                      </td>
+                    </tr>
+                  ),
+                  ...(expanded ? block.txs.filter(r => !MECHANICAL_TX_TYPES.has(r.tx.type)).map(renderCaliberRow) : []),
+                ]
+              })())}
             </tbody>
           </table>
         </div>
@@ -2300,12 +2825,15 @@ function CleaningModal({ weapon, totalRounds, cleanings, onClose, onSaved }: {
           {cleanings.length > 0 && (
             <div className="mt-5">
               <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">History ({cleanings.length})</p>
-              <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+              <div className="mt-2 max-h-40 overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-700 divide-y divide-neutral-100 dark:divide-neutral-800">
                 {cleanings.map(c => (
-                  <div key={c.id} className="flex justify-between items-center text-sm border border-neutral-100 dark:border-neutral-800 rounded-lg px-3 py-2">
-                    <span className="text-neutral-700 dark:text-neutral-300">{new Date(c.cleanedAt).toLocaleDateString()} <span className="text-neutral-400 dark:text-neutral-500">@ {c.roundCountAtCleaning.toLocaleString()} rds</span></span>
-                    <span className="text-xs text-neutral-400 dark:text-neutral-500 truncate max-w-[120px]">{c.note ?? ''}</span>
-                  </div>
+                  <HistoryRow key={c.id}
+                    date={new Date(c.cleanedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    chip={<span className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap bg-blue-600 text-white">CLEANED</span>}
+                    title={`@ ${c.roundCountAtCleaning.toLocaleString()} rds`}
+                    subtitle={c.note ?? undefined}
+                    right=""
+                  />
                 ))}
               </div>
             </div>
@@ -2856,25 +3384,26 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
         </div>
       ) : (
         <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 overflow-hidden shadow-sm divide-y divide-neutral-100 dark:divide-neutral-800">
-          {timeline.map(e => e.kind === 'shot' ? (
-            <div key={e.id} className="px-4 py-3">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-neutral-400 dark:text-neutral-500">{new Date(e.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-neutral-800 text-white">SHOT</span>
-                <span className="ml-auto font-semibold tabular-nums">{e.rounds.toLocaleString()} rds</span>
-              </div>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">{e.ammoName}{e.sessionNote ? ` · ${e.sessionNote}` : ''}</p>
-            </div>
-          ) : (
-            <div key={e.id} className="px-4 py-3">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-neutral-400 dark:text-neutral-500">{new Date(e.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-600 text-white">CLEANED</span>
-                <span className="ml-auto text-neutral-500 dark:text-neutral-400 tabular-nums text-xs">@ {e.roundCount.toLocaleString()} rds</span>
-              </div>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">{e.note ?? '—'}</p>
-            </div>
-          ))}
+          {timeline.map(e => {
+            const date = new Date(e.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+            return e.kind === 'shot' ? (
+              <HistoryRow key={e.id}
+                date={date}
+                chip={<span className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap bg-neutral-800 text-white">SHOT</span>}
+                title={e.ammoName}
+                subtitle={e.sessionNote ?? undefined}
+                right={`${e.rounds.toLocaleString()} rds`}
+              />
+            ) : (
+              <HistoryRow key={e.id}
+                date={date}
+                chip={<span className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap bg-blue-600 text-white">CLEANED</span>}
+                title={`@ ${e.roundCount.toLocaleString()} rds`}
+                subtitle={e.note ?? undefined}
+                right=""
+              />
+            )
+          })}
         </div>
       )}
 
@@ -3563,6 +4092,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
               group={viewingCaliber}
               refreshKey={txRefreshKey}
               onBack={() => setViewingCaliberName(null)}
+              onWeaponClick={id => setViewingWeaponId(id)}
             />
           ) : inventoryLoading ? (
             <p className="text-neutral-400 dark:text-neutral-500 text-sm">Loading inventory...</p>
@@ -3586,6 +4116,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
               group={viewingCaliber}
               refreshKey={txRefreshKey}
               onBack={() => setViewingCaliberName(null)}
+              onWeaponClick={id => setViewingWeaponId(id)}
             />
           ) : (
             <div>
