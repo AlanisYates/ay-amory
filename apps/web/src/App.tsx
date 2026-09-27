@@ -2217,16 +2217,16 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
             <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `$${avgPrice.perRound.toFixed(2)}` : '—'}</p>
           </div>
           <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">BOUGHT</p>
-            <p className="text-[15px] font-bold tabular-nums">{totalBought > 0 ? `${totalBought.toLocaleString()} rds` : '—'}</p>
+            <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">BOUGHT · RDS</p>
+            <p className="text-[15px] font-bold tabular-nums">{totalBought > 0 ? `${totalBought.toLocaleString()}` : '—'}</p>
           </div>
           <div className="flex-1">
             <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">SPENT</p>
             <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `$${(avgPrice.totalCents / 100).toFixed(2)}` : '—'}</p>
           </div>
           <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">FIRED</p>
-            <p className="text-[15px] font-bold tabular-nums">{totalFired > 0 ? `${totalFired.toLocaleString()} rds` : '—'}</p>
+            <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">FIRED · RDS</p>
+            <p className="text-[15px] font-bold tabular-nums">{totalFired > 0 ? `${totalFired.toLocaleString()}` : '—'}</p>
           </div>
         </div>
       </div>
