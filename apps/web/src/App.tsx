@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
 const TOKEN_KEY = 'ay-armory-token'
 const API_BASE = ''
@@ -750,7 +750,7 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
                         : 'No rounds in storage — add inventory on the Ammo tab first.'}
                     </p>
                   ) : (
-                    <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2">
                       {ammoStepTypes.map(t => {
                         const row = rows.find(r => r.ammoTypeId === t.id)
                         const inCart = !!row
@@ -3093,6 +3093,8 @@ function WeaponManager({ weapons, onRefresh, onWeaponClick }: { weapons: Weapon[
   )
 }
 
+const AMMO_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#71717a']
+
 function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   weaponId: number; onBack: () => void; onRefresh: () => void
 }) {
@@ -3105,6 +3107,7 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   const [error, setError] = useState('')
   const [showCleaning, setShowCleaning] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [activeAmmo, setActiveAmmo] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -3178,25 +3181,6 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
     return events.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
   }, [history, cleanings])
 
-  const weeks = useMemo(() => {
-    const sessions: any[] = history?.sessions ?? []
-    const now = Date.now()
-    const buckets = Array.from({ length: 12 }, (_, i) => ({
-      rounds: 0,
-      start: now - (11 - i) * 7 * 86400000 - 6 * 86400000,
-    }))
-    for (const s of sessions) {
-      for (const st of (s.strings ?? [])) {
-        const idx = 11 - Math.floor((now - new Date(st.occurredAt).getTime()) / (7 * 86400000))
-        if (idx >= 0 && idx < 12) buckets[idx].rounds += st.rounds
-      }
-    }
-    return buckets.map((b, i) => ({
-      key: i,
-      rounds: b.rounds,
-      label: new Date(b.start).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }),
-    }))
-  }, [history])
 
   if (loading) return <p className="text-neutral-400 dark:text-neutral-500 text-sm">Loading weapon…</p>
   if (!weapon) return (
@@ -3222,9 +3206,6 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
 
   const byAmmoType: any[] = history?.byAmmoType ?? []
 
-  const weekMax = Math.max(1, ...weeks.map(w => w.rounds))
-  const activityTotal = weeks.reduce((s, w) => s + w.rounds, 0)
-  const mixMax = Math.max(1, ...byAmmoType.map((a: any) => a.rounds))
 
   const coarseTime = (iso: string) => {
     const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
@@ -3262,11 +3243,11 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
         </button>
       </div>
 
-      {/* Weapon header + ammo side by side on wide screens */}
-      <div className="md:grid md:grid-cols-3 md:gap-6 md:items-start mb-8">
+      {/* Weapon overview + ammo side by side on wide screens */}
+      <div className="md:grid md:grid-cols-3 md:gap-6 md:items-stretch mb-8">
       <div className="min-w-0 md:col-span-2">
-      {/* Weapon header card */}
-      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-8 md:mb-0">
+      {/* Weapon overview card */}
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-8 md:mb-0 h-full">
         {editing ? (
           <div className="flex flex-col gap-2">
             {error && <p className="text-red-500 text-sm">{error}</p>}
@@ -3323,64 +3304,67 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
                   </div>
                 ))}
               </div>
-            </div>
-          </>
-        )}
-      </div>
-      </div>
-      {!editing && (
-      <div className="min-w-0 flex flex-col gap-4">
-            {/* Rotation status */}
-            <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${verdict.dot}`} />
-              <span className="truncate">{verdict.text}</span>
-            </div>
-            {/* Activity — last 12 weeks */}
-            <div>
-              <div className="flex items-baseline justify-between mb-2">
-                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Activity</p>
-                <p className="text-xs text-neutral-400 dark:text-neutral-500 tabular-nums">{activityTotal.toLocaleString()} rds / 12 wks</p>
-              </div>
-              <div className="flex items-end gap-1 h-16">
-                {weeks.map(w => (
-                  <div key={w.key} title={`Wk of ${w.label} · ${w.rounds.toLocaleString()} rds`} className="flex-1 flex flex-col justify-end h-full">
-                    <div className={`${w.rounds > 0 ? 'bg-neutral-900 dark:bg-neutral-100' : 'bg-neutral-200 dark:bg-neutral-700'} rounded-sm w-full`} style={{ height: `${w.rounds > 0 ? Math.max(8, (w.rounds / weekMax) * 100) : 6}%` }} />
-                  </div>
-                ))}
-              </div>
-            </div>
-            {/* Ammo through this gun */}
-            {byAmmoType.length > 0 && (
-              <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm">
-                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Ammo</p>
-                <div className="flex flex-col gap-2">
-                  {byAmmoType.map((a: any) => (
-                    <div key={a.ammoTypeId}>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-neutral-700 dark:text-neutral-300 truncate">{a.name}</span>
-                        <span className="text-neutral-500 dark:text-neutral-400 tabular-nums ml-2 shrink-0">{a.rounds.toLocaleString()}</span>
-                      </div>
-                      <div className="h-2 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-neutral-900 dark:bg-neutral-100 rounded-full" style={{ width: `${(a.rounds / mixMax) * 100}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-      </div>
-      )}
-      </div>
             {/* Cleaning — one door */}
       {!editing && (
-            <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-sm mb-8">
+            <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-sm mt-4">
               <button onClick={() => setShowCleaning(true)}
                 className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 cursor-pointer transition-colors ${overdue ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-neutral-50 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
                 <span className={`text-sm font-semibold ${overdue ? 'text-red-700' : 'text-neutral-700 dark:text-neutral-300'}`}>Cleaning</span>
                 <span className={`text-xs ${overdue ? 'text-red-600' : 'text-neutral-500 dark:text-neutral-400'}`}>{cleaningStatus} →</span>
               </button>
             </div>
+            )}
+            </div>
+          </>
         )}
+      </div>
+      </div>
+      {!editing && (
+      <div className="min-w-0 flex flex-col gap-4 h-full">
+            {/* Rotation status */}
+            <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${verdict.dot}`} />
+              <span className="truncate">{verdict.text}</span>
+            </div>
+            {/* Ammo through this gun */}
+            {byAmmoType.length > 0 && (
+              <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm flex-1">
+                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Ammo</p>
+<div className="flex flex-col gap-2">
+                  <div className="relative mx-auto w-full max-w-[220px]">
+                    <ResponsiveContainer width="100%" height={180}>
+                      <PieChart>
+                        <Pie data={byAmmoType} dataKey="rounds" nameKey="name" innerRadius={62} outerRadius={85} paddingAngle={3} strokeWidth={0} onMouseEnter={(_: any, i: number) => setActiveAmmo(i)} onMouseLeave={() => setActiveAmmo(null)}>
+                          {byAmmoType.map((a: any, i: number) => (
+                            <Cell key={a.ammoTypeId} fill={AMMO_COLORS[i % AMMO_COLORS.length]} opacity={activeAmmo == null || activeAmmo === i ? 1 : 0.3} />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="text-2xl font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{(activeAmmo != null && byAmmoType[activeAmmo] ? byAmmoType[activeAmmo].rounds : total).toLocaleString()}</span>
+                      <span className="text-[11px] text-neutral-500 dark:text-neutral-400 max-w-[130px] truncate">{activeAmmo != null && byAmmoType[activeAmmo] ? byAmmoType[activeAmmo].name : 'rds fired'}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5 mt-1">
+                    {byAmmoType.map((a: any, i: number) => {
+                      const pct = total > 0 ? Math.round((a.rounds / total) * 100) : 0
+                      return (
+                        <div key={a.ammoTypeId} onMouseEnter={() => setActiveAmmo(i)} onMouseLeave={() => setActiveAmmo(null)}
+                          className={`flex items-center gap-1.5 text-xs rounded-md px-1 -mx-1 py-0.5 cursor-default ${activeAmmo === i ? 'bg-neutral-100 dark:bg-neutral-800' : ''}`}>
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: AMMO_COLORS[i % AMMO_COLORS.length] }} />
+                          <span className="truncate text-neutral-700 dark:text-neutral-300">{a.name}</span>
+                          <span className="ml-auto tabular-nums text-neutral-500 dark:text-neutral-400 shrink-0">{pct}%</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+      </div>
+      )}
+      </div>
 
       {/* History — shots and cleanings, newest first */}
       <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-3">
