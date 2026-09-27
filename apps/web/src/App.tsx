@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts'
 
 const TOKEN_KEY = 'ay-armory-token'
 const API_BASE = ''
@@ -200,6 +200,25 @@ function BurndownTooltip({ active, payload, label }: any) {
     </div>
   )
 }
+
+function GunTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  const rows = payload.filter((p: any) => p.value > 0)
+  if (rows.length === 0) return null
+  return (
+    <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-2 text-xs shadow-lg">
+      <p className="text-neutral-400 dark:text-neutral-500 mb-1">Wk of {label}</p>
+      {rows.map((p: any) => (
+        <div key={String(p.dataKey)} className="flex items-center gap-2 py-0.5">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.color ?? p.fill }} />
+          <span className="text-neutral-600 dark:text-neutral-400 truncate max-w-[140px]">{p.name}</span>
+          <span className="ml-auto pl-3 font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{Number(p.value).toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 
 function HistoryRow({ date, chip, title, subtitle, right, expanded, onToggle, children }: {
   date: string
@@ -750,7 +769,7 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
                         : 'No rounds in storage — add inventory on the Ammo tab first.'}
                     </p>
                   ) : (
-                    <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2">
                       {ammoStepTypes.map(t => {
                         const row = rows.find(r => r.ammoTypeId === t.id)
                         const inCart = !!row
@@ -1517,11 +1536,12 @@ function QuickAdd({ rounds, cap, onChange, onStep, onMax, steps = [5, 10, 30], s
   )
 }
 
-function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
+function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose, allowNew = true }: {
   ammoTypes: AmmoType[]
   caption: string
   onSubmit: (rows: AddAmmoRow[], note: string) => void
   onClose: () => void
+  allowNew?: boolean
 }) {
   const [qty, setQty] = useState<Record<number, string>>({})
   const [price, setPrice] = useState<Record<number, string>>({})
@@ -1553,35 +1573,41 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 p-5 max-w-md w-full">
-        <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">Add Ammo</h3>
+      <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 p-6 max-w-sm w-full">
+        <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Add Ammo</h3>
         <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{caption}</p>
 
-        <div className="mt-3 space-y-2 max-h-72 overflow-y-auto">
+        <div className="mt-4 space-y-2.5 max-h-80 overflow-y-auto">
           {ammoTypes.map(t => (
-            <div key={t.id} className="flex items-center justify-between gap-2">
-              <div className="text-sm">
-                <p className="font-medium">{t.name}</p>
-                <p className="text-xs text-neutral-400 dark:text-neutral-500">{t.caliber}</p>
+            <div key={t.id} className="rounded-xl border border-neutral-200 dark:border-neutral-700 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="font-medium text-sm truncate">{t.name}</p>
+                <p className="text-xs text-neutral-400 dark:text-neutral-500 shrink-0">{t.caliber}</p>
               </div>
-              <div className="flex items-center gap-1">
-                <input type="text" inputMode="numeric" pattern="[0-9]*" value={qty[t.id] ?? ''} placeholder="qty"
-                  onChange={e => {
-                    const v = e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '')
-                    setQty(prev => ({ ...prev, [t.id]: v }))
-                  }}
-                  className="w-16 px-2 py-1 border rounded-lg text-sm text-right" />
-                <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-neutral-500 text-sm pointer-events-none">$</span>
-                  <input type="text" inputMode="decimal" value={price[t.id] ?? ''} placeholder="0.00"
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">Rounds</label>
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" value={qty[t.id] ?? ''} placeholder="1000"
                     onChange={e => {
-                      let v = e.target.value.replace(/[^0-9.]/g, '')
-                      const p = v.split('.')
-                      if (p.length > 2) v = p[0] + '.' + p.slice(1).join('')
-                      if (p[1]?.length > 2) v = p[0] + '.' + p[1].slice(0, 2)
-                      setPrice(prev => ({ ...prev, [t.id]: v }))
+                      const v = e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '')
+                      setQty(prev => ({ ...prev, [t.id]: v }))
                     }}
-                    className="w-20 pl-5 pr-2 py-1 border rounded-lg text-sm text-right" />
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-base tabular-nums" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">Total cost</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-neutral-500 text-base pointer-events-none">$</span>
+                    <input type="text" inputMode="decimal" value={price[t.id] ?? ''} placeholder="0.00"
+                      onChange={e => {
+                        let v = e.target.value.replace(/[^0-9.]/g, '')
+                        const p = v.split('.')
+                        if (p.length > 2) v = p[0] + '.' + p.slice(1).join('')
+                        if (p[1]?.length > 2) v = p[0] + '.' + p[1].slice(0, 2)
+                        setPrice(prev => ({ ...prev, [t.id]: v }))
+                      }}
+                      className="w-full pl-7 pr-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-base tabular-nums" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1602,17 +1628,17 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
         {showNew && (
           <div className="mt-3 border rounded-lg p-3 space-y-2">
             <input placeholder="Name" value={draft.name}
-              onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} className="px-2 py-1 border rounded text-sm w-full" />
+              onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm w-full" />
             <div className="flex gap-2">
               <CaliberSelect value={draft.caliber} onChange={v => setDraft(d => ({ ...d, caliber: v }))} />
               <input placeholder="Brand" value={draft.brand}
-                onChange={e => setDraft(d => ({ ...d, brand: e.target.value }))} className="px-2 py-1 border rounded text-sm w-24" />
+                onChange={e => setDraft(d => ({ ...d, brand: e.target.value }))} className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm w-24" />
             </div>
             <div className="flex gap-2">
               <input placeholder="Grain" value={draft.grain}
-                onChange={e => setDraft(d => ({ ...d, grain: e.target.value.replace(/\D/g, '') }))} className="px-2 py-1 border rounded text-sm w-20" />
+                onChange={e => setDraft(d => ({ ...d, grain: e.target.value.replace(/\D/g, '') }))} className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm w-20" />
               <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="Qty" value={draft.quantity}
-                onChange={e => setDraft(d => ({ ...d, quantity: e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') }))} className="px-2 py-1 border rounded text-sm w-20" />
+                onChange={e => setDraft(d => ({ ...d, quantity: e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') }))} className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm w-20" />
               <div className="relative w-20">
                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-neutral-500 text-sm pointer-events-none">$</span>
                 <input type="text" inputMode="decimal" placeholder="0.00" value={draft.price}
@@ -1622,7 +1648,7 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
                     if (p.length > 2) v = p[0] + '.' + p.slice(1).join('')
                     if (p[1]?.length > 2) v = p[0] + '.' + p[1].slice(0, 2)
                     setDraft(d => ({ ...d, price: v }))
-                  }} className="w-full pl-5 pr-2 py-1 border rounded text-sm" />
+                  }} className="w-full pl-5 pr-2 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm" />
               </div>
             </div>
             <div className="flex gap-2">
@@ -1633,13 +1659,27 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
             </div>
           </div>
         )}
-        {!showNew && (
+        {allowNew && !showNew && (
           <button type="button" onClick={() => setShowNew(true)}
             className="text-sm text-neutral-600 dark:text-neutral-400 mt-3 cursor-pointer hover:text-neutral-900 dark:text-neutral-100">+ Add a new ammo type</button>
         )}
 
         <input type="text" placeholder="Note (optional)" value={note}
-          onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm w-full mt-3" />
+          onChange={e => setNote(e.target.value)} className="px-4 py-2.5 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm w-full mt-4" />
+
+        {ammoTypes.length === 1 && (() => {
+          const t = ammoTypes[0]
+          const q = Number(qty[t.id] ?? 0)
+          const c = Number(price[t.id] ?? NaN)
+          if (!(q > 0) || !Number.isFinite(c) || c < 0) return null
+          const ppr = c / q
+          return (
+            <div className="mt-4 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 p-4 text-center">
+              <p className="text-2xl font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{ppr < 1 ? `${(ppr * 100).toFixed(1)}¢ per round` : `$${ppr.toFixed(2)} per round`}</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 tabular-nums mt-1">{q.toLocaleString()} rds · ${c.toFixed(2)} total</p>
+            </div>
+          )
+        })()}
 
         <div className="flex gap-2 mt-4">
           <button type="button" onClick={onClose}
@@ -1921,7 +1961,7 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
 type EntryRow = { id: number; ammoTypeId: number; quantity: number; location: string; isBalancing: boolean; weaponId?: number | null }
 type TxWithEntries = Omit<Transaction, 'entries'> & { entries: EntryRow[] }
 
-function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { item: InventoryItem; onBack: () => void; refreshKey?: number; onWeaponClick?: (weaponId: number) => void }) {
+function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick, onChanged }: { item: InventoryItem; onBack: () => void; refreshKey?: number; onWeaponClick?: (weaponId: number) => void; onChanged?: () => void }) {
   const [transactions, setTransactions] = useState<TxWithEntries[]>([])
   const [weapons, setWeapons] = useState<Weapon[]>([])
   const [loading, setLoading] = useState(true)
@@ -1977,6 +2017,63 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
   // session blocks, newest first; standalone transactions stay flat.
   const blocks = useHistoryBlocks(rows)
   const [historyFilter, setHistoryFilter] = useState<NetClass | 'all'>('all')
+  const [showBuy, setShowBuy] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editData, setEditData] = useState<Partial<AmmoType>>({})
+  const [editError, setEditError] = useState('')
+  const saveEdit = async () => {
+    setEditError('')
+    const res = await apiFetch(`/ammo/types/${item.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(editData),
+    })
+    if (!res.ok) {
+      try { const d = await res.json(); setEditError(d.error || 'Error') } catch { setEditError('Error') }
+      return
+    }
+    setEditing(false)
+    onChanged?.()
+  }
+  const handleBuy = async (rows: AddAmmoRow[], note: string) => {
+    for (const r of rows) {
+      if (r.kind === 'existing') {
+        await apiFetch('/ammo/transactions', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: 'acquisition',
+            occurredAt: new Date().toISOString(),
+            note: note || null,
+            ...(r.price ? { price: Math.round(Number(r.price) * 100) } : {}),
+            entries: [{ ammoTypeId: r.ammoTypeId, quantity: r.quantity }],
+          }),
+        })
+      } else {
+        const res = await apiFetch('/ammo/types', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: r.name,
+            caliber: r.caliber,
+            ...(r.brand ? { brand: r.brand } : {}),
+            ...(r.grain ? { grain: Number(r.grain) } : {}),
+          }),
+        })
+        if (!res.ok) continue
+        const t = await res.json()
+        await apiFetch('/ammo/transactions', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: 'acquisition',
+            occurredAt: new Date().toISOString(),
+            note: note || null,
+            ...(r.price ? { price: Math.round(Number(r.price) * 100) } : {}),
+            entries: [{ ammoTypeId: t.id, quantity: r.quantity }],
+          }),
+        })
+      }
+    }
+    setShowBuy(false)
+    onChanged?.()
+  }
 
   const historyCounts = useMemo(() => {
     const counts: Record<NetClass | 'all', number> = { all: blocks.length, in: 0, out: 0, flat: 0 }
@@ -2149,8 +2246,33 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
     }))
   }, [transactions, item.id])
 
-  const usageMax = Math.max(1, ...usage.map(w => w.rounds))
   const usageTotal = usage.reduce((s, w) => s + w.rounds, 0)
+  // Weekly rounds stacked by firearm (top 3 guns + other) for the usage chart.
+  const usageByGun: any = useMemo(() => {
+    const tops = byWeapon.slice(0, 3).map(([id]) => id)
+    const rows: any[] = usage.map(u => {
+      const r: any = { key: u.key, label: u.label, other: 0 }
+      for (const t of tops) r[`w${t}`] = 0
+      return r
+    })
+    const now = Date.now()
+    for (const tx of transactions) {
+      if (tx.type !== 'range_day_shot') continue
+      const idx = 11 - Math.floor((now - new Date(tx.occurredAt).getTime()) / (7 * 86400000))
+      if (idx < 0 || idx >= 12) continue
+      for (const e of tx.entries) {
+        if (!e.isBalancing && e.ammoTypeId === item.id && e.weaponId != null && e.quantity < 0) {
+          const k = tops.includes(e.weaponId) ? `w${e.weaponId}` : 'other'
+          rows[idx][k] += -e.quantity
+        }
+      }
+    }
+    const totals = new Map<number, number>(byWeapon)
+    const series: any[] = tops.map((id, i) => ({ key: `w${id}`, weaponId: id, name: weaponName(id), color: GUN_COLORS[i % GUN_COLORS.length], rounds: totals.get(id) ?? 0 }))
+    const otherTotal = rows.reduce((s: number, r: any) => s + r.other, 0)
+    if (otherTotal > 0) series.push({ key: 'other', weaponId: null, name: 'Other', color: '#71717a', rounds: otherTotal })
+    return { rows, series, tops }
+  }, [transactions, item.id, usage, byWeapon])
   const totalFired = byWeapon.reduce((s, [, r]) => s + r, 0)
 
   const totalBought = useMemo(() => {
@@ -2193,72 +2315,121 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
         </button>
       </div>
 
-      {/* Title — hero image slots in here when ammo types gain an imageUrl */}
-      <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{item.name}</h2>
-      <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-        <span className="bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">{item.caliber}</span>
-        {item.grain && <span>{item.grain}gr</span>}
-        {item.brand && <span>· {item.brand}</span>}
-        {item.description && <span>· {item.description}</span>}
-      </div>
-      <p className="mt-1.5 text-[17px] text-neutral-900 dark:text-neutral-100">
-        {avgPrice
-          ? <><b className="tabular-nums">${avgPrice.perRound.toFixed(2)}</b><span className="text-sm text-neutral-500 dark:text-neutral-400"> avg/rd · </span></>
-          : null}
-        <span className="text-sm text-neutral-500 dark:text-neutral-400">{item.balance.toLocaleString()} in storage</span>
-      </p>
-
-      {/* Stats card */}
-      <div className="rounded-[20px] p-5 mt-4 bg-[#191d2b] text-white">
-        <p className="text-[10px] tracking-[1.5px] text-[#9aa0b4] font-semibold">AMMO · LIFETIME</p>
-        <div className="flex mt-3">
-          <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-[#9aa0b4]">AVG PAID</p>
-            <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `${avgPrice.perRound.toFixed(2)}` : '—'}</p>
-          </div>
-          <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-[#9aa0b4]">BOUGHT</p>
-            <p className="text-[15px] font-bold tabular-nums">{totalBought > 0 ? `${totalBought.toLocaleString()}` : '—'}</p>
-          </div>
-          <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-[#9aa0b4]">SPENT</p>
-            <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `${(avgPrice.totalCents / 100).toFixed(2)}` : '—'}</p>
-          </div>
-          <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-[#9aa0b4]">FIRED</p>
-            <p className="text-[15px] font-bold tabular-nums">{totalFired > 0 ? `${totalFired.toLocaleString()}` : '—'}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Usage */}
+      {/* Hero — identity + lifetime */}
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mt-4">
-        <div className="flex items-baseline justify-between mb-2">
-          <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Usage</p>
-          <p className="text-xs text-neutral-400 dark:text-neutral-500 tabular-nums">{usageTotal.toLocaleString()} rds / 12 wks</p>
-        </div>
-        <div className="flex items-end gap-1 h-16">
-          {usage.map(w => (
-            <div key={w.key} title={`Wk of ${w.label} · ${w.rounds.toLocaleString()} rds`} className="flex-1 flex flex-col justify-end h-full">
-              <div className={`${w.rounds > 0 ? 'bg-neutral-900 dark:bg-neutral-100' : 'bg-neutral-200 dark:bg-neutral-700'} rounded-sm w-full`} style={{ height: `${w.rounds > 0 ? Math.max(8, (w.rounds / usageMax) * 100) : 6}%` }} />
+        {editing ? (
+          <div className="flex flex-col gap-2">
+            {editError && <p className="text-red-500 text-sm">{editError}</p>}
+            <input value={editData.name ?? ''} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} placeholder="Name"
+              className="text-sm px-2 py-1.5 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100" />
+            <CaliberSelect value={editData.caliber ?? ''} onChange={v => setEditData(d => ({ ...d, caliber: v }))} />
+            <div className="grid grid-cols-2 gap-2">
+              <input type="number" value={editData.grain ?? ''} onChange={e => setEditData(d => ({ ...d, grain: e.target.value === '' ? null : Number(e.target.value) }))} placeholder="Grain"
+                className="text-sm px-2 py-1.5 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100" />
+              <input value={editData.brand ?? ''} onChange={e => setEditData(d => ({ ...d, brand: e.target.value }))} placeholder="Brand"
+                className="text-sm px-2 py-1.5 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100" />
             </div>
-          ))}
+            <input value={editData.description ?? ''} onChange={e => setEditData(d => ({ ...d, description: e.target.value }))} placeholder="Description (optional)"
+              className="text-sm px-2 py-1.5 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100" />
+            <div className="flex gap-2 mt-1">
+              <button onClick={saveEdit} className="text-xs px-3 py-1.5 bg-black text-white rounded-lg cursor-pointer hover:opacity-80">Save</button>
+              <button onClick={() => setEditing(false)} className="text-xs px-3 py-1.5 border border-neutral-300 dark:border-neutral-700 rounded-lg cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+<div className="flex items-center gap-2">
+              <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 truncate">{item.name}</h2>
+              <button onClick={() => { setEditData({ name: item.name, caliber: item.caliber, grain: item.grain, brand: item.brand, description: item.description }); setEditing(true) }}
+                className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 shrink-0 cursor-pointer" aria-label="Edit ammo type">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
+              </button>
+            </div>
+            <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+              <span className="bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">{item.caliber}</span>
+              {item.grain && <span>{item.grain}gr</span>}
+              {item.brand && <span>· {item.brand}</span>}
+              {item.description && <span>· {item.description}</span>}
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="text-3xl font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{item.balance.toLocaleString()}</p>
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mt-0.5">in storage</p>
+            <button onClick={() => setShowBuy(true)} className="mt-2 text-sm px-4 py-2 bg-black text-white rounded-lg cursor-pointer hover:opacity-80">+ Log buy</button>
+          </div>
         </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
+            <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{avgPrice ? `$${avgPrice.perRound.toFixed(2)}` : '—'}</p>
+            <p className="text-[10px] text-neutral-400 dark:text-neutral-500">AVG PAID · $</p>
+          </div>
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
+            <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{totalBought > 0 ? `${totalBought.toLocaleString()}` : '—'}</p>
+            <p className="text-[10px] text-neutral-400 dark:text-neutral-500">BOUGHT · RDS</p>
+          </div>
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
+            <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{avgPrice ? `$${(avgPrice.totalCents / 100).toFixed(2)}` : '—'}</p>
+            <p className="text-[10px] text-neutral-400 dark:text-neutral-500">SPENT · $</p>
+          </div>
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
+            <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{totalFired > 0 ? `${totalFired.toLocaleString()}` : '—'}</p>
+            <p className="text-[10px] text-neutral-400 dark:text-neutral-500">FIRED · RDS</p>
+          </div>
+        </div>
+          </>
+        )}
       </div>
-
-      {/* Fired through — tap a weapon to open its detail page */}
-      {byWeapon.length > 0 && (
-        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-6 py-2 mt-4 shadow-sm">
-          {byWeapon.map(([weaponId, rounds]) => (
-            <button key={weaponId} type="button" onClick={() => onWeaponClick?.(weaponId)}
-              className="flex items-center gap-3 py-3 border-b border-neutral-100 dark:border-neutral-800 last:border-0 text-sm w-full text-left hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer transition-colors">
-              <span className="text-neutral-700 dark:text-neutral-300 font-medium truncate">{weaponName(weaponId)}</span>
-              <span className="ml-auto font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{rounds.toLocaleString()} rds</span>
-              <span className="text-neutral-300">›</span>
-            </button>
-          ))}
+      {showBuy && (
+        <div className="mt-4">
+          <AddAmmoModal ammoTypes={[item]} allowNew={false} caption={`Log a purchase of ${item.name}. Adds to your inventory.`} onSubmit={handleBuy} onClose={() => setShowBuy(false)} />
         </div>
       )}
+
+      {/* Usage by firearm */}
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mt-4">
+        <div className="flex items-baseline justify-between mb-2">
+          <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Usage by firearm</p>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 tabular-nums">{usageTotal.toLocaleString()} rds / 12 wks</p>
+        </div>
+        {usageByGun.series.length > 0 ? (
+          <>
+            <div className="h-[190px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={usageByGun.rows} margin={{ top: 8, right: 4, bottom: 0, left: -8 }} barCategoryGap="30%">
+                  <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={28} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
+                  <YAxis hide />
+                  <Tooltip content={<GunTooltip />} cursor={{ fill: 'var(--chart-grid)', opacity: 0.35 }} />
+                  {usageByGun.series.map((s: any, si: number) => (
+                    <Bar key={s.key} dataKey={s.key} name={s.name} stackId="rounds" fill={s.color} radius={si === usageByGun.series.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-col gap-1.5 mt-3">
+              {usageByGun.series.map((s: any) => s.weaponId != null ? (
+                <button key={s.key} type="button" onClick={() => onWeaponClick?.(s.weaponId)}
+                  className="flex items-center gap-2 text-sm rounded-md px-1 -mx-1 py-0.5 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer transition-colors">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                  <span className="truncate text-neutral-700 dark:text-neutral-300 font-medium">{s.name}</span>
+                  <span className="ml-auto font-semibold tabular-nums text-neutral-900 dark:text-neutral-100 shrink-0">{s.rounds.toLocaleString()} rds</span>
+                  <span className="text-neutral-300">›</span>
+                </button>
+              ) : (
+                <div key={s.key} className="flex items-center gap-2 text-sm rounded-md px-1 -mx-1 py-0.5">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                  <span className="truncate text-neutral-700 dark:text-neutral-300 font-medium">{s.name}</span>
+                  <span className="ml-auto font-semibold tabular-nums text-neutral-900 dark:text-neutral-100 shrink-0">{s.rounds.toLocaleString()} rds</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-neutral-400 dark:text-neutral-500">No shots recorded yet.</p>
+        )}
+      </div>
 
       {/* Transaction history */}
       <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-3">
@@ -2338,7 +2509,7 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
 
 // ── Caliber Detail View ───────────────────────────────────────────────────
 
-function CaliberDetailView({ group, refreshKey = 0, onBack, onWeaponClick }: { group: CaliberGroup; refreshKey?: number; onBack: () => void; onWeaponClick?: (weaponId: number) => void }) {
+function CaliberDetailView({ group, refreshKey = 0, onBack, onWeaponClick, onChanged }: { group: CaliberGroup; refreshKey?: number; onBack: () => void; onWeaponClick?: (weaponId: number) => void; onChanged?: () => void }) {
   const [txMap, setTxMap] = useState<Map<number, TxWithEntries>>(new Map())
   const [loading, setLoading] = useState(true)
   const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null)
@@ -2488,7 +2659,7 @@ function CaliberDetailView({ group, refreshKey = 0, onBack, onWeaponClick }: { g
 
   if (viewingItem) {
     const liveItem = group.items.find(i => i.id === viewingItem.id) ?? viewingItem
-    return <AmmoTypeDetailView item={liveItem} refreshKey={refreshKey} onBack={() => setViewingItem(null)} onWeaponClick={onWeaponClick} />
+    return <AmmoTypeDetailView item={liveItem} refreshKey={refreshKey} onBack={() => setViewingItem(null)} onWeaponClick={onWeaponClick} onChanged={onChanged} />
   }
 
   return (
@@ -3093,6 +3264,10 @@ function WeaponManager({ weapons, onRefresh, onWeaponClick }: { weapons: Weapon[
   )
 }
 
+const AMMO_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#71717a']
+const GUN_COLORS = ['#3b82f6', '#22c55e', '#f59e0b']
+
+
 function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   weaponId: number; onBack: () => void; onRefresh: () => void
 }) {
@@ -3105,6 +3280,7 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   const [error, setError] = useState('')
   const [showCleaning, setShowCleaning] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [activeAmmo, setActiveAmmo] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -3178,6 +3354,7 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
     return events.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
   }, [history, cleanings])
 
+
   const weeks = useMemo(() => {
     const sessions: any[] = history?.sessions ?? []
     const now = Date.now()
@@ -3220,12 +3397,11 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   const hasSchedule = rInt != null || dInt != null
   const overdue = hasSchedule && ((rInt != null && rInt - roundsSince <= 0) || (dInt != null && dInt - daysSince <= 0))
 
-  const sessions: any[] = history?.sessions ?? []
   const byAmmoType: any[] = history?.byAmmoType ?? []
 
   const weekMax = Math.max(1, ...weeks.map(w => w.rounds))
   const activityTotal = weeks.reduce((s, w) => s + w.rounds, 0)
-  const mixMax = Math.max(1, ...byAmmoType.map((a: any) => a.rounds))
+
 
   const coarseTime = (iso: string) => {
     const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
@@ -3263,8 +3439,11 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
         </button>
       </div>
 
-      {/* Weapon header card */}
-      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-8">
+      {/* Weapon overview + ammo side by side on wide screens */}
+      <div className="md:grid md:grid-cols-3 md:gap-6 md:items-stretch mb-8">
+      <div className="min-w-0 md:col-span-2">
+      {/* Weapon overview card */}
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-8 md:mb-0 h-full">
         {editing ? (
           <div className="flex flex-col gap-2">
             {error && <p className="text-red-500 text-sm">{error}</p>}
@@ -3304,74 +3483,103 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
                 {weapon.serialNumber && <span>S/N: {weapon.serialNumber}</span>}
               </div>
               {weapon.notes && <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">{weapon.notes}</p>}
-              {initial > 0 && (
-                <div className="mt-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2 text-xs text-neutral-600 dark:text-neutral-400 tabular-nums">
-                  {initial.toLocaleString()} prior (pre-app) + {tracked.toLocaleString()} tracked
-                </div>
-              )}
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-3">
-                {[
-                  { value: total.toLocaleString(), label: 'fired' },
-                  { value: sessions.length.toLocaleString(), label: sessions.length === 1 ? 'day' : 'days' },
-                  { value: cleanings.length.toLocaleString(), label: cleanings.length === 1 ? 'cleaning' : 'cleanings' },
-                  { value: roundsSince.toLocaleString(), label: 'since clean' },
-                  { value: practice.perSession.toLocaleString(), label: 'avg/session' },
-                ].map(s => (
-                  <div key={s.label} className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-2 text-center">
-                    <p className="text-sm font-bold tabular-nums">{s.value}</p>
-                    <p className="text-[10px] text-neutral-400 dark:text-neutral-500">{s.label}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
             {/* Rotation status */}
-            <div className="mt-4 flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
+            <div className="mt-3 flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
               <span className={`w-2 h-2 rounded-full shrink-0 ${verdict.dot}`} />
               <span className="truncate">{verdict.text}</span>
             </div>
-            {/* Activity — last 12 weeks */}
-            <div className="mt-4">
-              <div className="flex items-baseline justify-between mb-2">
-                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Activity</p>
-                <p className="text-xs text-neutral-400 dark:text-neutral-500 tabular-nums">{activityTotal.toLocaleString()} rds / 12 wks</p>
-              </div>
-              <div className="flex items-end gap-1 h-16">
-                {weeks.map(w => (
-                  <div key={w.key} title={`Wk of ${w.label} · ${w.rounds.toLocaleString()} rds`} className="flex-1 flex flex-col justify-end h-full">
-                    <div className={`${w.rounds > 0 ? 'bg-neutral-900 dark:bg-neutral-100' : 'bg-neutral-200 dark:bg-neutral-700'} rounded-sm w-full`} style={{ height: `${w.rounds > 0 ? Math.max(8, (w.rounds / weekMax) * 100) : 6}%` }} />
+              <div className="grid grid-cols-3 gap-2 mt-3">
+                {[
+                  { value: total.toLocaleString(), label: 'fired', sub: initial > 0 ? `${initial.toLocaleString()} prior + ${tracked.toLocaleString()} tracked` : '' },
+                  { value: practice.perSession.toLocaleString(), label: 'avg/session', sub: '' },
+                  { value: practice.last30.toLocaleString(), label: 'last 30d', sub: '' },
+                ].map(s => (
+                  <div key={s.label} className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-2 text-center flex flex-col justify-center">
+                    <p className="text-sm font-bold tabular-nums">{s.value}</p>
+                    <p className="text-[10px] text-neutral-400 dark:text-neutral-500">{s.label}</p>
+                    {s.sub !== '' && <p className="text-[10px] leading-tight text-neutral-400 dark:text-neutral-500 tabular-nums">{s.sub}</p>}
                   </div>
                 ))}
               </div>
-            </div>
-            {/* Ammo through this gun */}
-            {byAmmoType.length > 0 && (
-              <div className="mt-4">
-                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Ammo Shot</p>
-                <div className="flex flex-col gap-2">
-                  {byAmmoType.map((a: any) => (
-                    <div key={a.ammoTypeId}>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-neutral-700 dark:text-neutral-300 truncate">{a.name}</span>
-                        <span className="text-neutral-500 dark:text-neutral-400 tabular-nums ml-2 shrink-0">{a.rounds.toLocaleString()}</span>
-                      </div>
-                      <div className="h-2 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-neutral-900 dark:bg-neutral-100 rounded-full" style={{ width: `${(a.rounds / mixMax) * 100}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+            {/* Cleaning */}
+            <div onClick={() => setShowCleaning(true)} className="mt-4 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2.5 cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-700/60 transition-colors">
+              <div className="flex justify-between items-baseline text-xs mb-1.5">
+                <span className="text-neutral-500 dark:text-neutral-400">{cleanings.length > 0 ? `Last cleaned ${daysSince}d ago` : 'Never cleaned yet'}</span>
+                <span className={`font-semibold shrink-0 ml-2 ${overdue ? 'text-red-600' : 'text-neutral-700 dark:text-neutral-300'}`}>{cleaningStatus} →</span>
               </div>
-            )}
-            {/* Cleaning — one door */}
-            <div className="mt-4">
-              <button onClick={() => setShowCleaning(true)}
-                className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 cursor-pointer transition-colors ${overdue ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-neutral-50 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
-                <span className={`text-sm font-semibold ${overdue ? 'text-red-700' : 'text-neutral-700 dark:text-neutral-300'}`}>Cleaning</span>
-                <span className={`text-xs ${overdue ? 'text-red-600' : 'text-neutral-500 dark:text-neutral-400'}`}>{cleaningStatus} →</span>
-              </button>
+              {hasSchedule ? (
+                <>
+                  <div className="flex justify-between text-[11px] text-neutral-500 dark:text-neutral-400 mb-1 tabular-nums">
+                    <span>{rInt != null ? `${roundsSince.toLocaleString()}/${rInt.toLocaleString()} rds` : `${daysSince}/${dInt}d`}</span>
+                  </div>
+                  <div className="h-1.5 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden">
+                    <div className={`h-full ${overdue ? 'bg-red-500' : 'bg-neutral-900 dark:bg-neutral-100'}`} style={{ width: `${Math.min(100, Math.max(0, (rInt != null ? roundsSince / rInt : daysSince / (dInt ?? 1)) * 100))}%` }} />
+                  </div>
+                </>
+              ) : (
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">No cleaning schedule · tap to set up</p>
+              )}
+            </div>
             </div>
           </>
         )}
+      </div>
+      </div>
+      {!editing && (
+      <div className="min-w-0 flex flex-col gap-4 h-full">
+            {/* Ammo through this gun */}
+            {byAmmoType.length > 0 && (
+              <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm flex-1">
+                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Ammo</p>
+<div className="flex flex-col gap-2">
+                  <div className="relative mx-auto w-full max-w-[220px]">
+                    <ResponsiveContainer width="100%" height={180}>
+                      <PieChart>
+                        <Pie data={byAmmoType} dataKey="rounds" nameKey="name" innerRadius={62} outerRadius={85} paddingAngle={3} strokeWidth={0} onMouseEnter={(_: any, i: number) => setActiveAmmo(i)} onMouseLeave={() => setActiveAmmo(null)}>
+                          {byAmmoType.map((a: any, i: number) => (
+                            <Cell key={a.ammoTypeId} fill={AMMO_COLORS[i % AMMO_COLORS.length]} opacity={activeAmmo == null || activeAmmo === i ? 1 : 0.3} />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="text-2xl font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{(activeAmmo != null && byAmmoType[activeAmmo] ? byAmmoType[activeAmmo].rounds : total).toLocaleString()}</span>
+                      <span className="text-[11px] text-neutral-500 dark:text-neutral-400 max-w-[130px] truncate">{activeAmmo != null && byAmmoType[activeAmmo] ? byAmmoType[activeAmmo].name : 'rds fired'}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5 mt-1">
+                    {byAmmoType.map((a: any, i: number) => {
+                      const pct = total > 0 ? Math.round((a.rounds / total) * 100) : 0
+                      return (
+                        <div key={a.ammoTypeId} onMouseEnter={() => setActiveAmmo(i)} onMouseLeave={() => setActiveAmmo(null)}
+                          className={`flex items-center gap-1.5 text-xs rounded-md px-1 -mx-1 py-0.5 cursor-default ${activeAmmo === i ? 'bg-neutral-100 dark:bg-neutral-800' : ''}`}>
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: AMMO_COLORS[i % AMMO_COLORS.length] }} />
+                          <span className="truncate text-neutral-700 dark:text-neutral-300">{a.name}</span>
+                          <span className="ml-auto tabular-nums text-neutral-500 dark:text-neutral-400 shrink-0">{pct}%</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+      </div>
+      )}
+      </div>
+
+      {/* Activity — last 12 weeks */}
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-8">
+        <div className="flex items-baseline justify-between mb-2">
+          <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Activity</p>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 tabular-nums">{activityTotal.toLocaleString()} rds / 12 wks</p>
+        </div>
+        <div className="flex items-end gap-1.5 h-20">
+          {weeks.map(w => (
+            <div key={w.key} title={`Wk of ${w.label} · ${w.rounds.toLocaleString()} rds`} className="flex-1 flex flex-col justify-end h-full">
+              <div className={`${w.rounds > 0 ? 'bg-neutral-900 dark:bg-neutral-100' : 'bg-neutral-200 dark:bg-neutral-700'} rounded-sm w-full`} style={{ height: `${w.rounds > 0 ? Math.max(8, (w.rounds / weekMax) * 100) : 6}%` }} />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* History — shots and cleanings, newest first */}
@@ -4091,6 +4299,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
             <CaliberDetailView
               group={viewingCaliber}
               refreshKey={txRefreshKey}
+              onChanged={handleActionSuccess}
               onBack={() => setViewingCaliberName(null)}
               onWeaponClick={id => setViewingWeaponId(id)}
             />
@@ -4115,6 +4324,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
             <CaliberDetailView
               group={viewingCaliber}
               refreshKey={txRefreshKey}
+              onChanged={handleActionSuccess}
               onBack={() => setViewingCaliberName(null)}
               onWeaponClick={id => setViewingWeaponId(id)}
             />
