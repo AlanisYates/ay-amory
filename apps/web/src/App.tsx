@@ -1536,11 +1536,12 @@ function QuickAdd({ rounds, cap, onChange, onStep, onMax, steps = [5, 10, 30], s
   )
 }
 
-function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
+function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose, allowNew = true }: {
   ammoTypes: AmmoType[]
   caption: string
   onSubmit: (rows: AddAmmoRow[], note: string) => void
   onClose: () => void
+  allowNew?: boolean
 }) {
   const [qty, setQty] = useState<Record<number, string>>({})
   const [price, setPrice] = useState<Record<number, string>>({})
@@ -1658,7 +1659,7 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
             </div>
           </div>
         )}
-        {!showNew && (
+        {allowNew && !showNew && (
           <button type="button" onClick={() => setShowNew(true)}
             className="text-sm text-neutral-600 dark:text-neutral-400 mt-3 cursor-pointer hover:text-neutral-900 dark:text-neutral-100">+ Add a new ammo type</button>
         )}
@@ -2382,7 +2383,7 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick, onCha
       </div>
       {showBuy && (
         <div className="mt-4">
-          <AddAmmoModal ammoTypes={[item]} caption={`Log a purchase of ${item.name}. Adds to your inventory.`} onSubmit={handleBuy} onClose={() => setShowBuy(false)} />
+          <AddAmmoModal ammoTypes={[item]} allowNew={false} caption={`Log a purchase of ${item.name}. Adds to your inventory.`} onSubmit={handleBuy} onClose={() => setShowBuy(false)} />
         </div>
       )}
 
