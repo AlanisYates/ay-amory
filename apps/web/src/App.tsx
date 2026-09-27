@@ -3945,6 +3945,8 @@ function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0 }: { 
   const [loading, setLoading] = useState(true)
   const [viewingId, setViewingId] = useState<number | null>(null)
   const [actionError, setActionError] = useState('')
+  const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
+  const [stageDetail, setStageDetail] = useState<Record<number, any>>({})
 
   const load = () => {
     setLoading(true)
@@ -3954,6 +3956,21 @@ function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0 }: { 
       .finally(() => setLoading(false))
   }
   useEffect(load, [refreshKey])
+  useEffect(() => {
+    apiFetch('/ammo/types').then(r => r.ok ? r.json() : []).then(t => setAmmoTypes(Array.isArray(t) ? t : [])).catch(() => {})
+  }, [])
+  const stagedIds = sessions.filter((s: any) => s.status === 'staged').map((s: any) => s.id).sort().join(',')
+  useEffect(() => {
+    const ids = sessions.filter((s: any) => s.status === 'staged').map((s: any) => s.id)
+    ids.forEach((id: number) => {
+      if (stageDetail[id] !== undefined) return
+      apiFetch(`/ammo/range-days/${id}`).then(r => r.ok ? r.json() : null).then(d => {
+        if (d) setStageDetail(prev => ({ ...prev, [id]: d }))
+      }).catch(() => {})
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stagedIds])
+  const typeById = new Map(ammoTypes.map(t => [t.id, t]))
 
   const startStaged = async (id: number) => {
     setActionError('')
@@ -3983,18 +4000,46 @@ function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0 }: { 
   return (
     <div>
       {staged.length > 0 && (
-        <div className="mb-6">
-          <p className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Staged — pack at home</p>
+        <div className="mb-6 rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-4">
+          <p className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">Stage at home</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">Pack now · clock starts only when you hit Start range day</p>
           <div className="space-y-3">
-            {staged.map((s: any) => (
+            {staged.map((s: any) => {
+              const d = stageDetail[s.id]
+              const guns = (d?.weapons ?? []).map((w: any) => w.name ?? `Gun #${w.id}`)
+              const ammo = (d?.bag ?? []).map((b: any) => ({ name: typeById.get(b.ammoTypeId)?.name ?? `Type #${b.ammoTypeId}`, qty: b.inBag ?? b.taken ?? b.quantity ?? 0 }))
+              return (
               <div key={s.id} className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">{s.note || 'Untitled pack'}</p>
-                    <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Packed · not started · no time tracked</p>
-                  </div>
+                  <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">{s.note || 'Untitled pack'}</p>
                   <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 shrink-0">Staged</span>
                 </div>
+                {d == null ? (
+                  <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-2">Loading pack…</p>
+                ) : (
+                  <>
+                    {guns.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {guns.map((g: string, i: number) => (
+                          <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">{g}</span>
+                        ))}
+                      </div>
+                    )}
+                    {ammo.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {ammo.map((a: any, i: number) => (
+                          <div key={i} className="flex justify-between text-xs">
+                            <span className="text-neutral-600 dark:text-neutral-400 truncate">{a.name}</span>
+                            <span className="tabular-nums text-neutral-700 dark:text-neutral-300 ml-2 shrink-0">{a.qty.toLocaleString()} rds</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {guns.length === 0 && ammo.length === 0 && (
+                      <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-2">Empty pack — edit to add guns and ammo.</p>
+                    )}
+                  </>
+                )}
                 <div className="flex flex-wrap gap-2 mt-3">
                   <button onClick={() => startStaged(s.id)} disabled={hasActive} title={hasActive ? 'End the current range day first' : undefined}
                     className="text-xs px-3 py-1.5 bg-black text-white rounded-lg cursor-pointer hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed">Start range day</button>
@@ -4002,7 +4047,8 @@ function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0 }: { 
                   <button onClick={() => deleteStaged(s.id)} className="text-xs px-3 py-1.5 border border-neutral-300 dark:border-neutral-600 rounded-lg cursor-pointer text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30">Delete</button>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
