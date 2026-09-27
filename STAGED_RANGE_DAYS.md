@@ -24,8 +24,8 @@ only on **Start range day**.
 - [x] `RangeDayStartWizard`: stage + edit-prefill modes, staged/POST-vs-PATCH submit
 - [ ] App `page='range-day-stage'` + `stageInitial` plumbing, entry from tab
 - [ ] `RangeDaysTab`: Staged section, Start/Edit/Delete, null-startedAt guards
-- [ ] Auto-resume skips staged; timer guards null startedAt
-- [ ] Verify (parse/build/tsc), commit
+- [x] Auto-resume skips staged; timer guards null startedAt
+- [x] Verify (parse/build/tsc), commit
 
 ## Rollout fallback (frontend works pre-backend)
 Missing `status` ⇒ treated as active-when-started. Staged UI appears only when
@@ -33,6 +33,6 @@ backend returns `status='staged'`. Stage/start/edit/delete buttons surface
 backend errors (404/409) as messages until the contract ships.
 
 ## Resume state
-- Branch: (fill on commit)
-- Last green step: schema + type
-- Next: wizard stage/edit mode
+- Branch: main @ 64f4868 (unpushed)
+- Last green step: full frontend committed; backend contract pending
+- Next: backend contract, then e2e (stage/start/edit/delete)
