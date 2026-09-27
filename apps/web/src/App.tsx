@@ -1572,35 +1572,41 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 p-5 max-w-md w-full">
-        <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">Add Ammo</h3>
+      <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 p-6 max-w-sm w-full">
+        <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Add Ammo</h3>
         <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">{caption}</p>
 
-        <div className="mt-3 space-y-2 max-h-72 overflow-y-auto">
+        <div className="mt-4 space-y-2.5 max-h-80 overflow-y-auto">
           {ammoTypes.map(t => (
-            <div key={t.id} className="flex items-center justify-between gap-2">
-              <div className="text-sm">
-                <p className="font-medium">{t.name}</p>
-                <p className="text-xs text-neutral-400 dark:text-neutral-500">{t.caliber}</p>
+            <div key={t.id} className="rounded-xl border border-neutral-200 dark:border-neutral-700 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="font-medium text-sm truncate">{t.name}</p>
+                <p className="text-xs text-neutral-400 dark:text-neutral-500 shrink-0">{t.caliber}</p>
               </div>
-              <div className="flex items-center gap-1">
-                <input type="text" inputMode="numeric" pattern="[0-9]*" value={qty[t.id] ?? ''} placeholder="qty"
-                  onChange={e => {
-                    const v = e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '')
-                    setQty(prev => ({ ...prev, [t.id]: v }))
-                  }}
-                  className="w-16 px-2 py-1 border rounded-lg text-sm text-right" />
-                <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-neutral-500 text-sm pointer-events-none">$</span>
-                  <input type="text" inputMode="decimal" value={price[t.id] ?? ''} placeholder="0.00"
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">Rounds</label>
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" value={qty[t.id] ?? ''} placeholder="1000"
                     onChange={e => {
-                      let v = e.target.value.replace(/[^0-9.]/g, '')
-                      const p = v.split('.')
-                      if (p.length > 2) v = p[0] + '.' + p.slice(1).join('')
-                      if (p[1]?.length > 2) v = p[0] + '.' + p[1].slice(0, 2)
-                      setPrice(prev => ({ ...prev, [t.id]: v }))
+                      const v = e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '')
+                      setQty(prev => ({ ...prev, [t.id]: v }))
                     }}
-                    className="w-20 pl-5 pr-2 py-1 border rounded-lg text-sm text-right" />
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-base tabular-nums" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">Total cost</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-neutral-500 text-base pointer-events-none">$</span>
+                    <input type="text" inputMode="decimal" value={price[t.id] ?? ''} placeholder="0.00"
+                      onChange={e => {
+                        let v = e.target.value.replace(/[^0-9.]/g, '')
+                        const p = v.split('.')
+                        if (p.length > 2) v = p[0] + '.' + p.slice(1).join('')
+                        if (p[1]?.length > 2) v = p[0] + '.' + p[1].slice(0, 2)
+                        setPrice(prev => ({ ...prev, [t.id]: v }))
+                      }}
+                      className="w-full pl-7 pr-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-base tabular-nums" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1621,17 +1627,17 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
         {showNew && (
           <div className="mt-3 border rounded-lg p-3 space-y-2">
             <input placeholder="Name" value={draft.name}
-              onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} className="px-2 py-1 border rounded text-sm w-full" />
+              onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm w-full" />
             <div className="flex gap-2">
               <CaliberSelect value={draft.caliber} onChange={v => setDraft(d => ({ ...d, caliber: v }))} />
               <input placeholder="Brand" value={draft.brand}
-                onChange={e => setDraft(d => ({ ...d, brand: e.target.value }))} className="px-2 py-1 border rounded text-sm w-24" />
+                onChange={e => setDraft(d => ({ ...d, brand: e.target.value }))} className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm w-24" />
             </div>
             <div className="flex gap-2">
               <input placeholder="Grain" value={draft.grain}
-                onChange={e => setDraft(d => ({ ...d, grain: e.target.value.replace(/\D/g, '') }))} className="px-2 py-1 border rounded text-sm w-20" />
+                onChange={e => setDraft(d => ({ ...d, grain: e.target.value.replace(/\D/g, '') }))} className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm w-20" />
               <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="Qty" value={draft.quantity}
-                onChange={e => setDraft(d => ({ ...d, quantity: e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') }))} className="px-2 py-1 border rounded text-sm w-20" />
+                onChange={e => setDraft(d => ({ ...d, quantity: e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '') }))} className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm w-20" />
               <div className="relative w-20">
                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-neutral-500 text-sm pointer-events-none">$</span>
                 <input type="text" inputMode="decimal" placeholder="0.00" value={draft.price}
@@ -1641,7 +1647,7 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
                     if (p.length > 2) v = p[0] + '.' + p.slice(1).join('')
                     if (p[1]?.length > 2) v = p[0] + '.' + p[1].slice(0, 2)
                     setDraft(d => ({ ...d, price: v }))
-                  }} className="w-full pl-5 pr-2 py-1 border rounded text-sm" />
+                  }} className="w-full pl-5 pr-2 py-2 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm" />
               </div>
             </div>
             <div className="flex gap-2">
@@ -1658,7 +1664,21 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose }: {
         )}
 
         <input type="text" placeholder="Note (optional)" value={note}
-          onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm w-full mt-3" />
+          onChange={e => setNote(e.target.value)} className="px-4 py-2.5 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm w-full mt-4" />
+
+        {ammoTypes.length === 1 && (() => {
+          const t = ammoTypes[0]
+          const q = Number(qty[t.id] ?? 0)
+          const c = Number(price[t.id] ?? NaN)
+          if (!(q > 0) || !Number.isFinite(c) || c < 0) return null
+          const ppr = c / q
+          return (
+            <div className="mt-4 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 p-4 text-center">
+              <p className="text-2xl font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{ppr < 1 ? `${(ppr * 100).toFixed(1)}¢ per round` : `$${ppr.toFixed(2)} per round`}</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 tabular-nums mt-1">{q.toLocaleString()} rds · ${c.toFixed(2)} total</p>
+            </div>
+          )
+        })()}
 
         <div className="flex gap-2 mt-4">
           <button type="button" onClick={onClose}
