@@ -7,8 +7,8 @@ only on **Start range day**.
 - Start while another is active: **BLOCK** (button disabled + hint, must end current first).
 - Stock movement: **move-on-start** (staged create/edit/delete touches no inventory).
 
-## Backend contract (separate service — NOT in this repo)
-- [ ] Migration: `range_day_sessions.status TEXT DEFAULT 'staged' NOT NULL`;
+## Backend contract (apps/api — IN this repo)
+- [x] Migration: `range_day_sessions.status TEXT DEFAULT 'staged' NOT NULL`;
       `started_at` nullable.
 - [ ] `POST /ammo/range-days` accepts `staged?: boolean` → staged session,
       `startedAt: null`, no stock movement.
