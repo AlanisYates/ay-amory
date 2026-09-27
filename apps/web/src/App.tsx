@@ -3182,6 +3182,26 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   }, [history, cleanings])
 
 
+  const weeks = useMemo(() => {
+    const sessions: any[] = history?.sessions ?? []
+    const now = Date.now()
+    const buckets = Array.from({ length: 12 }, (_, i) => ({
+      rounds: 0,
+      start: now - (11 - i) * 7 * 86400000 - 6 * 86400000,
+    }))
+    for (const s of sessions) {
+      for (const st of (s.strings ?? [])) {
+        const idx = 11 - Math.floor((now - new Date(st.occurredAt).getTime()) / (7 * 86400000))
+        if (idx >= 0 && idx < 12) buckets[idx].rounds += st.rounds
+      }
+    }
+    return buckets.map((b, i) => ({
+      key: i,
+      rounds: b.rounds,
+      label: new Date(b.start).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }),
+    }))
+  }, [history])
+
   if (loading) return <p className="text-neutral-400 dark:text-neutral-500 text-sm">Loading weapon…</p>
   if (!weapon) return (
     <div>
@@ -3205,6 +3225,9 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   const overdue = hasSchedule && ((rInt != null && rInt - roundsSince <= 0) || (dInt != null && dInt - daysSince <= 0))
 
   const byAmmoType: any[] = history?.byAmmoType ?? []
+
+  const weekMax = Math.max(1, ...weeks.map(w => w.rounds))
+  const activityTotal = weeks.reduce((s, w) => s + w.rounds, 0)
 
 
   const coarseTime = (iso: string) => {
@@ -3292,11 +3315,16 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
                   {initial.toLocaleString()} prior (pre-app) + {tracked.toLocaleString()} tracked
                 </div>
               )}
+            {/* Rotation status */}
+            <div className="mt-3 flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${verdict.dot}`} />
+              <span className="truncate">{verdict.text}</span>
+            </div>
               <div className="grid grid-cols-3 gap-2 mt-3">
                 {[
                   { value: total.toLocaleString(), label: 'fired' },
-                  { value: cleanings.length.toLocaleString(), label: cleanings.length === 1 ? 'cleaning' : 'cleanings' },
                   { value: practice.perSession.toLocaleString(), label: 'avg/session' },
+                  { value: practice.last30.toLocaleString(), label: 'last 30d' },
                 ].map(s => (
                   <div key={s.label} className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-2 text-center">
                     <p className="text-sm font-bold tabular-nums">{s.value}</p>
@@ -3304,16 +3332,25 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
                   </div>
                 ))}
               </div>
-            {/* Cleaning — one door */}
-      {!editing && (
-            <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-sm mt-4">
-              <button onClick={() => setShowCleaning(true)}
-                className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 cursor-pointer transition-colors ${overdue ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-neutral-50 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
-                <span className={`text-sm font-semibold ${overdue ? 'text-red-700' : 'text-neutral-700 dark:text-neutral-300'}`}>Cleaning</span>
-                <span className={`text-xs ${overdue ? 'text-red-600' : 'text-neutral-500 dark:text-neutral-400'}`}>{cleaningStatus} →</span>
-              </button>
+            {/* Cleaning */}
+            <div onClick={() => setShowCleaning(true)} className="mt-4 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2.5 cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-700/60 transition-colors">
+              <div className="flex justify-between items-baseline text-xs mb-1.5">
+                <span className="text-neutral-500 dark:text-neutral-400">{cleanings.length > 0 ? `Last cleaned ${daysSince}d ago` : 'Never cleaned yet'}</span>
+                <span className={`font-semibold shrink-0 ml-2 ${overdue ? 'text-red-600' : 'text-neutral-700 dark:text-neutral-300'}`}>{cleaningStatus} →</span>
+              </div>
+              {hasSchedule ? (
+                <>
+                  <div className="flex justify-between text-[11px] text-neutral-500 dark:text-neutral-400 mb-1 tabular-nums">
+                    <span>{rInt != null ? `${roundsSince.toLocaleString()}/${rInt.toLocaleString()} rds` : `${daysSince}/${dInt}d`}</span>
+                  </div>
+                  <div className="h-1.5 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden">
+                    <div className={`h-full ${overdue ? 'bg-red-500' : 'bg-neutral-900 dark:bg-neutral-100'}`} style={{ width: `${Math.min(100, Math.max(0, (rInt != null ? roundsSince / rInt : daysSince / (dInt ?? 1)) * 100))}%` }} />
+                  </div>
+                </>
+              ) : (
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">No cleaning schedule · tap to set up</p>
+              )}
             </div>
-            )}
             </div>
           </>
         )}
@@ -3321,11 +3358,6 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
       </div>
       {!editing && (
       <div className="min-w-0 flex flex-col gap-4 h-full">
-            {/* Rotation status */}
-            <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${verdict.dot}`} />
-              <span className="truncate">{verdict.text}</span>
-            </div>
             {/* Ammo through this gun */}
             {byAmmoType.length > 0 && (
               <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm flex-1">
@@ -3364,6 +3396,21 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
             )}
       </div>
       )}
+      </div>
+
+      {/* Activity — last 12 weeks */}
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-8">
+        <div className="flex items-baseline justify-between mb-2">
+          <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Activity</p>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 tabular-nums">{activityTotal.toLocaleString()} rds / 12 wks</p>
+        </div>
+        <div className="flex items-end gap-1.5 h-20">
+          {weeks.map(w => (
+            <div key={w.key} title={`Wk of ${w.label} · ${w.rounds.toLocaleString()} rds`} className="flex-1 flex flex-col justify-end h-full">
+              <div className={`${w.rounds > 0 ? 'bg-neutral-900 dark:bg-neutral-100' : 'bg-neutral-200 dark:bg-neutral-700'} rounded-sm w-full`} style={{ height: `${w.rounds > 0 ? Math.max(8, (w.rounds / weekMax) * 100) : 6}%` }} />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* History — shots and cleanings, newest first */}
