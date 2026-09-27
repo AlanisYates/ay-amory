@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts'
 
 const TOKEN_KEY = 'ay-armory-token'
 const API_BASE = ''
@@ -200,6 +200,25 @@ function BurndownTooltip({ active, payload, label }: any) {
     </div>
   )
 }
+
+function GunTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  const rows = payload.filter((p: any) => p.value > 0)
+  if (rows.length === 0) return null
+  return (
+    <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-2 text-xs shadow-lg">
+      <p className="text-neutral-400 dark:text-neutral-500 mb-1">Wk of {label}</p>
+      {rows.map((p: any) => (
+        <div key={String(p.dataKey)} className="flex items-center gap-2 py-0.5">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.color ?? p.fill }} />
+          <span className="text-neutral-600 dark:text-neutral-400 truncate max-w-[140px]">{p.name}</span>
+          <span className="ml-auto pl-3 font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{Number(p.value).toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 
 function HistoryRow({ date, chip, title, subtitle, right, expanded, onToggle, children }: {
   date: string
@@ -2149,8 +2168,33 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
     }))
   }, [transactions, item.id])
 
-  const usageMax = Math.max(1, ...usage.map(w => w.rounds))
   const usageTotal = usage.reduce((s, w) => s + w.rounds, 0)
+  // Weekly rounds stacked by firearm (top 3 guns + other) for the usage chart.
+  const usageByGun: any = useMemo(() => {
+    const tops = byWeapon.slice(0, 3).map(([id]) => id)
+    const rows: any[] = usage.map(u => {
+      const r: any = { key: u.key, label: u.label, other: 0 }
+      for (const t of tops) r[`w${t}`] = 0
+      return r
+    })
+    const now = Date.now()
+    for (const tx of transactions) {
+      if (tx.type !== 'range_day_shot') continue
+      const idx = 11 - Math.floor((now - new Date(tx.occurredAt).getTime()) / (7 * 86400000))
+      if (idx < 0 || idx >= 12) continue
+      for (const e of tx.entries) {
+        if (!e.isBalancing && e.ammoTypeId === item.id && e.weaponId != null && e.quantity < 0) {
+          const k = tops.includes(e.weaponId) ? `w${e.weaponId}` : 'other'
+          rows[idx][k] += -e.quantity
+        }
+      }
+    }
+    const totals = new Map<number, number>(byWeapon)
+    const series: any[] = tops.map((id, i) => ({ key: `w${id}`, weaponId: id, name: weaponName(id), color: GUN_COLORS[i % GUN_COLORS.length], rounds: totals.get(id) ?? 0 }))
+    const otherTotal = rows.reduce((s: number, r: any) => s + r.other, 0)
+    if (otherTotal > 0) series.push({ key: 'other', weaponId: null, name: 'Other', color: '#71717a', rounds: otherTotal })
+    return { rows, series, tops }
+  }, [transactions, item.id, usage, byWeapon])
   const totalFired = byWeapon.reduce((s, [, r]) => s + r, 0)
 
   const totalBought = useMemo(() => {
@@ -2193,72 +2237,84 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
         </button>
       </div>
 
-      {/* Title — hero image slots in here when ammo types gain an imageUrl */}
-      <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{item.name}</h2>
-      <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-        <span className="bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">{item.caliber}</span>
-        {item.grain && <span>{item.grain}gr</span>}
-        {item.brand && <span>· {item.brand}</span>}
-        {item.description && <span>· {item.description}</span>}
-      </div>
-      <p className="mt-1.5 text-[17px] text-neutral-900 dark:text-neutral-100">
-        {avgPrice
-          ? <><b className="tabular-nums">${avgPrice.perRound.toFixed(2)}</b><span className="text-sm text-neutral-500 dark:text-neutral-400"> avg/rd · </span></>
-          : null}
-        <span className="text-sm text-neutral-500 dark:text-neutral-400">{item.balance.toLocaleString()} in storage</span>
-      </p>
-
-      {/* Stats card */}
-      <div className="rounded-[20px] p-5 mt-4 bg-white dark:bg-[#191d2b] text-neutral-900 dark:text-white border border-neutral-200 dark:border-transparent shadow-sm">
-        <p className="text-[10px] tracking-[1.5px] text-neutral-500 dark:text-[#9aa0b4] font-semibold">AMMO · LIFETIME</p>
-        <div className="flex mt-3">
-          <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">AVG PAID</p>
-            <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `$${avgPrice.perRound.toFixed(2)}` : '—'}</p>
+      {/* Hero — identity + lifetime */}
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mt-4">
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="min-w-0">
+            <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{item.name}</h2>
+            <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+              <span className="bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">{item.caliber}</span>
+              {item.grain && <span>{item.grain}gr</span>}
+              {item.brand && <span>· {item.brand}</span>}
+              {item.description && <span>· {item.description}</span>}
+            </div>
+            <p className="mt-4 text-4xl font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{item.balance.toLocaleString()}</p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mt-1">in storage</p>
           </div>
-          <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">BOUGHT · RDS</p>
-            <p className="text-[15px] font-bold tabular-nums">{totalBought > 0 ? `${totalBought.toLocaleString()}` : '—'}</p>
-          </div>
-          <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">SPENT</p>
-            <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `$${(avgPrice.totalCents / 100).toFixed(2)}` : '—'}</p>
-          </div>
-          <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">FIRED · RDS</p>
-            <p className="text-[15px] font-bold tabular-nums">{totalFired > 0 ? `${totalFired.toLocaleString()}` : '—'}</p>
+          <div className="grid grid-cols-2 gap-2 content-center">
+            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
+              <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{avgPrice ? `$${avgPrice.perRound.toFixed(2)}` : '—'}</p>
+              <p className="text-[10px] text-neutral-400 dark:text-neutral-500">AVG PAID · $</p>
+            </div>
+            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
+              <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{totalBought > 0 ? `${totalBought.toLocaleString()}` : '—'}</p>
+              <p className="text-[10px] text-neutral-400 dark:text-neutral-500">BOUGHT · RDS</p>
+            </div>
+            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
+              <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{avgPrice ? `$${(avgPrice.totalCents / 100).toFixed(2)}` : '—'}</p>
+              <p className="text-[10px] text-neutral-400 dark:text-neutral-500">SPENT · $</p>
+            </div>
+            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
+              <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{totalFired > 0 ? `${totalFired.toLocaleString()}` : '—'}</p>
+              <p className="text-[10px] text-neutral-400 dark:text-neutral-500">FIRED · RDS</p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Usage */}
+      {/* Usage by firearm */}
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mt-4">
         <div className="flex items-baseline justify-between mb-2">
-          <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Usage</p>
+          <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Usage by firearm</p>
           <p className="text-xs text-neutral-400 dark:text-neutral-500 tabular-nums">{usageTotal.toLocaleString()} rds / 12 wks</p>
         </div>
-        <div className="flex items-end gap-1 h-16">
-          {usage.map(w => (
-            <div key={w.key} title={`Wk of ${w.label} · ${w.rounds.toLocaleString()} rds`} className="flex-1 flex flex-col justify-end h-full">
-              <div className={`${w.rounds > 0 ? 'bg-neutral-900 dark:bg-neutral-100' : 'bg-neutral-200 dark:bg-neutral-700'} rounded-sm w-full`} style={{ height: `${w.rounds > 0 ? Math.max(8, (w.rounds / usageMax) * 100) : 6}%` }} />
+        {usageByGun.series.length > 0 ? (
+          <>
+            <div className="h-[190px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={usageByGun.rows} margin={{ top: 8, right: 4, bottom: 0, left: -8 }} barCategoryGap="30%">
+                  <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={28} tick={{ fill: 'var(--chart-tick)', fontSize: 11 }} />
+                  <YAxis hide />
+                  <Tooltip content={<GunTooltip />} cursor={{ fill: 'var(--chart-grid)', opacity: 0.35 }} />
+                  {usageByGun.series.map((s: any, si: number) => (
+                    <Bar key={s.key} dataKey={s.key} name={s.name} stackId="rounds" fill={s.color} radius={si === usageByGun.series.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-          ))}
-        </div>
+            <div className="flex flex-col gap-1.5 mt-3">
+              {usageByGun.series.map((s: any) => s.weaponId != null ? (
+                <button key={s.key} type="button" onClick={() => onWeaponClick?.(s.weaponId)}
+                  className="flex items-center gap-2 text-sm rounded-md px-1 -mx-1 py-0.5 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer transition-colors">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                  <span className="truncate text-neutral-700 dark:text-neutral-300 font-medium">{s.name}</span>
+                  <span className="ml-auto font-semibold tabular-nums text-neutral-900 dark:text-neutral-100 shrink-0">{s.rounds.toLocaleString()} rds</span>
+                  <span className="text-neutral-300">›</span>
+                </button>
+              ) : (
+                <div key={s.key} className="flex items-center gap-2 text-sm rounded-md px-1 -mx-1 py-0.5">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                  <span className="truncate text-neutral-700 dark:text-neutral-300 font-medium">{s.name}</span>
+                  <span className="ml-auto font-semibold tabular-nums text-neutral-900 dark:text-neutral-100 shrink-0">{s.rounds.toLocaleString()} rds</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-neutral-400 dark:text-neutral-500">No shots recorded yet.</p>
+        )}
       </div>
-
-      {/* Fired through — tap a weapon to open its detail page */}
-      {byWeapon.length > 0 && (
-        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-6 py-2 mt-4 shadow-sm">
-          {byWeapon.map(([weaponId, rounds]) => (
-            <button key={weaponId} type="button" onClick={() => onWeaponClick?.(weaponId)}
-              className="flex items-center gap-3 py-3 border-b border-neutral-100 dark:border-neutral-800 last:border-0 text-sm w-full text-left hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer transition-colors">
-              <span className="text-neutral-700 dark:text-neutral-300 font-medium truncate">{weaponName(weaponId)}</span>
-              <span className="ml-auto font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{rounds.toLocaleString()} rds</span>
-              <span className="text-neutral-300">›</span>
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Transaction history */}
       <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-3">
@@ -3094,6 +3150,8 @@ function WeaponManager({ weapons, onRefresh, onWeaponClick }: { weapons: Weapon[
 }
 
 const AMMO_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#71717a']
+const GUN_COLORS = ['#3b82f6', '#22c55e', '#f59e0b']
+
 
 function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   weaponId: number; onBack: () => void; onRefresh: () => void
