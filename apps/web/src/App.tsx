@@ -3992,8 +3992,8 @@ function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0 }: { 
     onEdit({ id, note: d.note ?? null, weaponIds: (d.weapons ?? []).map((w: any) => w.id), ammo: (d.bag ?? []).map((b: any) => ({ ammoTypeId: b.ammoTypeId, quantity: b.inBag ?? b.taken ?? 0 })) })
   }
 
-  const staged = sessions.filter((s: any) => s.status === 'staged' || (s.status == null && s.startedAt == null))
-  const past = sessions.filter((s: any) => !(s.status === 'staged' || (s.status == null && s.startedAt == null)))
+  const staged = sessions.filter((s: any) => s.startedAt == null)
+  const past = sessions.filter((s: any) => s.startedAt != null)
 
   if (viewingId != null) return <RangeDayDetailDrawer sessionId={viewingId} onClose={() => setViewingId(null)} />
 
@@ -4074,7 +4074,7 @@ function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0 }: { 
             const ended = s.endedAt ? new Date(s.endedAt) : null
             const mins = ended ? Math.round((ended.getTime() - started.getTime()) / 60000) : null
             const duration = mins != null ? `${Math.floor(mins / 60)}h ${mins % 60}m` : 'In progress'
-            const isActive = s.status === 'active' || (s.status == null && !s.endedAt)
+            const isActive = s.startedAt != null && s.endedAt == null
             return (
               <button key={s.id} onClick={() => setViewingId(s.id)} className="w-full text-left rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
                 <div className="flex items-start justify-between gap-3">
@@ -4766,7 +4766,7 @@ function App() {
         const sessRes = await apiFetch('/ammo/range-days')
         if (sessRes.ok) {
           const sessions: RangeDaySession[] = await sessRes.json()
-          const active = sessions.find(s => s.status === 'active' || (s.status == null && s.endedAt == null && s.startedAt != null))
+          const active = sessions.find(s => s.startedAt != null && s.endedAt == null)
           if (active) {
             const detailRes = await apiFetch(`/ammo/range-days/${active.id}`)
             if (detailRes.ok) setActiveSession(await detailRes.json())
