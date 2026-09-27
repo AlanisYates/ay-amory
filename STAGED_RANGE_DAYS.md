@@ -33,6 +33,6 @@ backend returns `status='staged'`. Stage/start/edit/delete buttons surface
 backend errors (404/409) as messages until the contract ships.
 
 ## Resume state
-- Branch: main @ 64f4868 (unpushed)
+- Branch: feature/staged-range-days (local only, unpushed)
 - Last green step: full frontend committed; backend contract pending
 - Next: backend contract, then e2e (stage/start/edit/delete)
