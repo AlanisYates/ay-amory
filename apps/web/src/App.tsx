@@ -3310,11 +3310,6 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
                 {weapon.serialNumber && <span>S/N: {weapon.serialNumber}</span>}
               </div>
               {weapon.notes && <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-2">{weapon.notes}</p>}
-              {initial > 0 && (
-                <div className="mt-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2 text-xs text-neutral-600 dark:text-neutral-400 tabular-nums">
-                  {initial.toLocaleString()} prior (pre-app) + {tracked.toLocaleString()} tracked
-                </div>
-              )}
             {/* Rotation status */}
             <div className="mt-3 flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
               <span className={`w-2 h-2 rounded-full shrink-0 ${verdict.dot}`} />
@@ -3322,13 +3317,14 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
             </div>
               <div className="grid grid-cols-3 gap-2 mt-3">
                 {[
-                  { value: total.toLocaleString(), label: 'fired' },
-                  { value: practice.perSession.toLocaleString(), label: 'avg/session' },
-                  { value: practice.last30.toLocaleString(), label: 'last 30d' },
+                  { value: total.toLocaleString(), label: 'fired', sub: initial > 0 ? `${initial.toLocaleString()} prior + ${tracked.toLocaleString()} tracked` : '' },
+                  { value: practice.perSession.toLocaleString(), label: 'avg/session', sub: '' },
+                  { value: practice.last30.toLocaleString(), label: 'last 30d', sub: '' },
                 ].map(s => (
                   <div key={s.label} className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-2 text-center">
                     <p className="text-sm font-bold tabular-nums">{s.value}</p>
                     <p className="text-[10px] text-neutral-400 dark:text-neutral-500">{s.label}</p>
+                    {s.sub !== '' && <p className="text-[10px] leading-tight text-neutral-400 dark:text-neutral-500 tabular-nums">{s.sub}</p>}
                   </div>
                 ))}
               </div>
