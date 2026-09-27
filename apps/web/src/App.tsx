@@ -2240,7 +2240,7 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
       {/* Hero — identity + lifetime */}
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mt-4">
         <div className="grid gap-6 md:grid-cols-2">
-          <div className="min-w-0">
+          <div className="min-w-0 flex flex-col">
             <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{item.name}</h2>
             <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500 dark:text-neutral-400">
               <span className="bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">{item.caliber}</span>
@@ -2248,8 +2248,10 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
               {item.brand && <span>· {item.brand}</span>}
               {item.description && <span>· {item.description}</span>}
             </div>
-            <p className="mt-4 text-4xl font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{item.balance.toLocaleString()}</p>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mt-1">in storage</p>
+            <div className="flex-1 flex flex-col items-center justify-center py-4">
+              <p className={`text-5xl font-bold tabular-nums ${item.balance <= 0 ? 'text-red-600 dark:text-red-500' : totalBought > 0 && item.balance / totalBought < 0.25 ? 'text-amber-600 dark:text-amber-500' : 'text-neutral-900 dark:text-neutral-100'}`}>{item.balance.toLocaleString()}</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mt-1">in storage</p>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-2 content-center">
             <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
