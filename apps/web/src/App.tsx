@@ -3220,7 +3220,6 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   const hasSchedule = rInt != null || dInt != null
   const overdue = hasSchedule && ((rInt != null && rInt - roundsSince <= 0) || (dInt != null && dInt - daysSince <= 0))
 
-  const sessions: any[] = history?.sessions ?? []
   const byAmmoType: any[] = history?.byAmmoType ?? []
 
   const weekMax = Math.max(1, ...weeks.map(w => w.rounds))
@@ -3263,8 +3262,11 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
         </button>
       </div>
 
+      {/* Weapon header + ammo side by side on wide screens */}
+      <div className="md:grid md:grid-cols-3 md:gap-6 md:items-start mb-8">
+      <div className="min-w-0 md:col-span-2">
       {/* Weapon header card */}
-      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-8">
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mb-8 md:mb-0">
         {editing ? (
           <div className="flex flex-col gap-2">
             {error && <p className="text-red-500 text-sm">{error}</p>}
@@ -3309,12 +3311,10 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
                   {initial.toLocaleString()} prior (pre-app) + {tracked.toLocaleString()} tracked
                 </div>
               )}
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-3">
+              <div className="grid grid-cols-3 gap-2 mt-3">
                 {[
                   { value: total.toLocaleString(), label: 'fired' },
-                  { value: sessions.length.toLocaleString(), label: sessions.length === 1 ? 'day' : 'days' },
                   { value: cleanings.length.toLocaleString(), label: cleanings.length === 1 ? 'cleaning' : 'cleanings' },
-                  { value: roundsSince.toLocaleString(), label: 'since clean' },
                   { value: practice.perSession.toLocaleString(), label: 'avg/session' },
                 ].map(s => (
                   <div key={s.label} className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-2 text-center">
@@ -3324,13 +3324,19 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
                 ))}
               </div>
             </div>
+          </>
+        )}
+      </div>
+      </div>
+      {!editing && (
+      <div className="min-w-0 flex flex-col gap-4">
             {/* Rotation status */}
-            <div className="mt-4 flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
+            <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
               <span className={`w-2 h-2 rounded-full shrink-0 ${verdict.dot}`} />
               <span className="truncate">{verdict.text}</span>
             </div>
             {/* Activity — last 12 weeks */}
-            <div className="mt-4">
+            <div>
               <div className="flex items-baseline justify-between mb-2">
                 <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Activity</p>
                 <p className="text-xs text-neutral-400 dark:text-neutral-500 tabular-nums">{activityTotal.toLocaleString()} rds / 12 wks</p>
@@ -3345,8 +3351,8 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
             </div>
             {/* Ammo through this gun */}
             {byAmmoType.length > 0 && (
-              <div className="mt-4">
-                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Ammo Shot</p>
+              <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm">
+                <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Ammo</p>
                 <div className="flex flex-col gap-2">
                   {byAmmoType.map((a: any) => (
                     <div key={a.ammoTypeId}>
@@ -3362,17 +3368,19 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
                 </div>
               </div>
             )}
+      </div>
+      )}
+      </div>
             {/* Cleaning — one door */}
-            <div className="mt-4">
+      {!editing && (
+            <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-sm mb-8">
               <button onClick={() => setShowCleaning(true)}
                 className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 cursor-pointer transition-colors ${overdue ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-neutral-50 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
                 <span className={`text-sm font-semibold ${overdue ? 'text-red-700' : 'text-neutral-700 dark:text-neutral-300'}`}>Cleaning</span>
                 <span className={`text-xs ${overdue ? 'text-red-600' : 'text-neutral-500 dark:text-neutral-400'}`}>{cleaningStatus} →</span>
               </button>
             </div>
-          </>
         )}
-      </div>
 
       {/* History — shots and cleanings, newest first */}
       <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-3">
