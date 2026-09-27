@@ -26,7 +26,10 @@ export const rangeDaySessions = pgTable('range_day_sessions', {
   id: serial('id').primaryKey(),
   userId: integer('user_id').notNull().references(() => users.id),
   note: text('note'),
-  startedAt: timestamp('started_at').defaultNow().notNull(),
+  // 'staged' = packed at home, clock not running; 'active' = live; 'ended' = done.
+  status: text('status').default('staged').notNull(),
+  // Null until the range day is actually started (see POST .../start).
+  startedAt: timestamp('started_at'),
   endedAt: timestamp('ended_at'),
 })
 

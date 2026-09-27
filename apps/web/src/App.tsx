@@ -39,7 +39,8 @@ type RangeDayString = {
 type GunLoaded = { weaponId: number; ammoTypeId: number; rounds: number }
 
 type RangeDaySession = {
-  id: number; note: string | null; startedAt: string; endedAt: string | null
+  id: number; note: string | null; startedAt: string | null; endedAt: string | null
+  status?: 'staged' | 'active' | 'ended'
   bag?: BagItem[]; weapons?: Weapon[]; strings?: RangeDayString[]; gunLoaded?: GunLoaded[]
 }
 
@@ -586,13 +587,23 @@ function NewTypeForm({ onSuccess, onClose }: { onSuccess: () => void; onClose: (
 
 type AmmoRow = { ammoTypeId: number; quantity: number }
 
-function RangeDayStartWizard({ onComplete, onCancel }: {
+type StageInitial = {
+  id?: number
+  note: string | null
+  weaponIds: number[]
+  ammo: { ammoTypeId: number; quantity: number }[]
+}
+
+
+function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = false }: {
   onComplete: (session: RangeDaySession) => void
   onCancel: () => void
+  initial?: StageInitial | null
+  staged?: boolean
 }) {
   const [step, setStep] = useState<1 | 2>(1)
-  const [note, setNote] = useState('')
-  const [selectedWeapons, setSelectedWeapons] = useState<number[]>([])
+  const [note, setNote] = useState(initial?.note ?? '')
+  const [selectedWeapons, setSelectedWeapons] = useState<number[]>(initial?.weaponIds ?? [])
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
   const [weapons, setWeapons] = useState<Weapon[]>([])
   const [inventory, setInventory] = useState<InventoryItem[]>([])
@@ -615,6 +626,7 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
       setAmmoTypes(types); setWeapons(wps); setInventory(inv)
       const stocked = types.filter(x => (inv.find(y => y.id === x.id)?.balance ?? 0) > 0)
       setRows([])
+      if (initial?.ammo?.length) setRows(initial.ammo.map(a => ({ ammoTypeId: a.ammoTypeId, quantity: a.quantity })))
       setLoading(false)
     }).catch(() => setLoading(false))
     return () => { cancelled = true }
@@ -665,10 +677,15 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
     const overLimit = ammo.some(r => r.quantity > availableFor(r.ammoTypeId))
     if (overLimit) { setError('One or more calibers exceed what you have in storage'); return }
     setSubmitting(true)
-    const res = await apiFetch('/ammo/range-days', {
-      method: 'POST',
-      body: JSON.stringify({ note: note || null, ammo, weapons: selectedWeapons }),
-    })
+    const res = initial?.id != null
+      ? await apiFetch(`/ammo/range-days/${initial.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ note: note || null, ammo, weapons: selectedWeapons }),
+      })
+      : await apiFetch('/ammo/range-days', {
+        method: 'POST',
+        body: JSON.stringify({ note: note || null, ammo, weapons: selectedWeapons, ...(staged ? { staged: true } : {}) }),
+      })
     setSubmitting(false)
     if (!res.ok) { const d = await res.json(); setError(d.error || 'Error'); return }
     const session = await res.json()
@@ -680,7 +697,7 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
       <header className="border-b border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 sticky top-0 z-10">
         <div className="mx-auto max-w-3xl flex items-center justify-between px-6 h-16">
           <button onClick={onCancel} className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer">← Cancel</button>
-          <h1 className="text-lg font-bold tracking-tight">Start Range Day</h1>
+          <h1 className="text-lg font-bold tracking-tight">{initial?.id != null ? 'Edit pack list' : staged ? 'Pack for later' : 'Start Range Day'}</h1>
           <div className="w-16" />
         </div>
       </header>
@@ -815,7 +832,7 @@ function RangeDayStartWizard({ onComplete, onCancel }: {
                     className="px-4 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">← Back</button>
                   <button type="submit" disabled={submitting}
                     className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer disabled:opacity-40">
-                    Start Range Day
+                    {initial?.id != null ? 'Save pack list' : staged ? 'Save pack list' : 'Start Range Day'}
                   </button>
                 </div>
               </div>
@@ -3787,10 +3804,10 @@ function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClo
     </div>
   )
 
-  const started = new Date(detail.startedAt)
+  const started = detail.startedAt ? new Date(detail.startedAt) : null
   const ended = detail.endedAt ? new Date(detail.endedAt) : null
-  const mins = ended ? Math.round((ended.getTime() - started.getTime()) / 60000) : null
-  const duration = mins != null ? `${Math.floor(mins / 60)}h ${mins % 60}m` : 'In progress'
+  const mins = ended && started ? Math.round((ended.getTime() - started.getTime()) / 60000) : null
+  const duration = mins != null ? `${Math.floor(mins / 60)}h ${mins % 60}m` : started ? 'In progress' : 'Not started'
   const strings: any[] = detail.strings ?? []
   const totalFired = strings.reduce((s: number, x: any) => s + (x.rounds ?? 0), 0)
   const byWeapon = new Map<number, number>()
@@ -3809,8 +3826,8 @@ function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClo
         <div className="p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{started.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })} · {duration}</h3>
-              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">{started.toLocaleString()} {ended ? `→ ${ended.toLocaleString()}` : ''}</p>
+              <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{started ? started.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : 'Staged pack'} · {duration}</h3>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">{started ? started.toLocaleString() : 'Clock starts on Start range day'}{ended ? ` → ${ended.toLocaleString()}` : ''}</p>
               {detail.note && <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-2 italic">“{detail.note}”</p>}
             </div>
             <button onClick={onClose} className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 text-xl leading-none cursor-pointer">×</button>
@@ -3923,41 +3940,95 @@ function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClo
   )
 }
 
-function RangeDaysTab() {
+function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0 }: { onPack: () => void; onEdit: (init: StageInitial) => void; onStart: (s: RangeDaySession) => void; hasActive: boolean; refreshKey?: number }) {
   const [sessions, setSessions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [viewingId, setViewingId] = useState<number | null>(null)
+  const [actionError, setActionError] = useState('')
 
-  useEffect(() => {
+  const load = () => {
     setLoading(true)
     apiFetch('/ammo/range-days')
       .then(r => r.ok ? r.json() : [])
-      .then((arr: any[]) => setSessions(Array.isArray(arr) ? arr.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()) : []))
+      .then((arr: any[]) => setSessions(Array.isArray(arr) ? arr.sort((a, b) => (new Date(b.startedAt ?? 0).getTime() || 0) - (new Date(a.startedAt ?? 0).getTime() || 0)) : []))
       .finally(() => setLoading(false))
-  }, [])
+  }
+  useEffect(load, [refreshKey])
+
+  const startStaged = async (id: number) => {
+    setActionError('')
+    const res = await apiFetch(`/ammo/range-days/${id}/start`, { method: 'POST' })
+    if (!res.ok) { const d = await res.json().catch(() => ({})); setActionError(d.error || 'Could not start range day'); return }
+    onStart(await res.json())
+  }
+  const deleteStaged = async (id: number) => {
+    if (!confirm('Delete this staged pack list? Nothing has left storage.')) return
+    const res = await apiFetch(`/ammo/range-days/${id}`, { method: 'DELETE' })
+    if (!res.ok) { const d = await res.json().catch(() => ({})); setActionError(d.error || 'Could not delete'); return }
+    load()
+  }
+  const editStaged = async (id: number) => {
+    setActionError('')
+    const res = await apiFetch(`/ammo/range-days/${id}`)
+    if (!res.ok) { setActionError('Could not load pack list'); return }
+    const d = await res.json()
+    onEdit({ id, note: d.note ?? null, weaponIds: (d.weapons ?? []).map((w: any) => w.id), ammo: (d.bag ?? []).map((b: any) => ({ ammoTypeId: b.ammoTypeId, quantity: b.inBag ?? b.taken ?? 0 })) })
+  }
+
+  const staged = sessions.filter((s: any) => s.status === 'staged' || (s.status == null && s.startedAt == null))
+  const past = sessions.filter((s: any) => !(s.status === 'staged' || (s.status == null && s.startedAt == null)))
 
   if (viewingId != null) return <RangeDayDetailDrawer sessionId={viewingId} onClose={() => setViewingId(null)} />
 
   return (
     <div>
+      {staged.length > 0 && (
+        <div className="mb-6">
+          <p className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Staged — pack at home</p>
+          <div className="space-y-3">
+            {staged.map((s: any) => (
+              <div key={s.id} className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">{s.note || 'Untitled pack'}</p>
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Packed · not started · no time tracked</p>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 shrink-0">Staged</span>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <button onClick={() => startStaged(s.id)} disabled={hasActive} title={hasActive ? 'End the current range day first' : undefined}
+                    className="text-xs px-3 py-1.5 bg-black text-white rounded-lg cursor-pointer hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed">Start range day</button>
+                  <button onClick={() => editStaged(s.id)} className="text-xs px-3 py-1.5 border border-neutral-300 dark:border-neutral-600 rounded-lg cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">Edit</button>
+                  <button onClick={() => deleteStaged(s.id)} className="text-xs px-3 py-1.5 border border-neutral-300 dark:border-neutral-600 rounded-lg cursor-pointer text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30">Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {actionError && <p className="text-red-500 text-sm mb-3">{actionError}</p>}
+
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Past Range Days</h3>
-        <span className="text-xs text-neutral-400 dark:text-neutral-500">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-neutral-400 dark:text-neutral-500">{past.length} session{past.length !== 1 ? 's' : ''}</span>
+          <button onClick={onPack} className="text-xs px-3 py-1.5 bg-black text-white rounded-lg cursor-pointer hover:opacity-80">+ Pack for later</button>
+        </div>
       </div>
       {loading ? (
         <p className="text-sm text-neutral-400 dark:text-neutral-500">Loading…</p>
-      ) : sessions.length === 0 ? (
+      ) : staged.length === 0 && past.length === 0 ? (
         <div className="rounded-xl border border-dashed border-neutral-300 dark:border-neutral-600 p-10 text-center">
           <p className="text-sm text-neutral-500 dark:text-neutral-400">No range days yet — start one from the dashboard header.</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {sessions.map(s => {
+          {past.map(s => {
             const started = new Date(s.startedAt)
             const ended = s.endedAt ? new Date(s.endedAt) : null
             const mins = ended ? Math.round((ended.getTime() - started.getTime()) / 60000) : null
             const duration = mins != null ? `${Math.floor(mins / 60)}h ${mins % 60}m` : 'In progress'
-            const isActive = !s.endedAt
+            const isActive = s.status === 'active' || (s.status == null && !s.endedAt)
             return (
               <button key={s.id} onClick={() => setViewingId(s.id)} className="w-full text-left rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
                 <div className="flex items-start justify-between gap-3">
@@ -4076,13 +4147,15 @@ function ExportImportTab({ onImported }: { onImported?: () => void }) {
 
 type QuickAction = 'acquire' | 'expend' | 'adjust' | 'new-type' | null
 
-function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResumeRangeDay, onStartRangeDay, theme, onToggleTheme }: {
+function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResumeRangeDay, onStartRangeDay, onPackRangeDay, onEditStaged, theme, onToggleTheme }: {
   user: User
   onLogout: () => void
   onRangeDayStart: (session: RangeDaySession) => void
   activeSession: RangeDaySession | null
   onResumeRangeDay: () => void
   onStartRangeDay: () => void
+  onPackRangeDay: () => void
+  onEditStaged: (init: StageInitial) => void
   theme: 'light' | 'dark'
   onToggleTheme: () => void
 }) {
@@ -4510,7 +4583,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         )}
 
         {tab === 'range-days' && (
-          <RangeDaysTab />
+          <RangeDaysTab onPack={onPackRangeDay} onEdit={onEditStaged} onStart={onRangeDayStart} hasActive={activeSession != null} refreshKey={txRefreshKey} />
         )}
 
         {tab === 'backup' && (
@@ -4618,7 +4691,8 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeSession, setActiveSession] = useState<RangeDaySession | null>(null)
-  const [page, setPage] = useState<'dashboard' | 'range-day' | 'range-day-start'>('dashboard')
+  const [page, setPage] = useState<'dashboard' | 'range-day' | 'range-day-start' | 'range-day-stage'>('dashboard')
+  const [stageInitial, setStageInitial] = useState<StageInitial | null>(null)
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     try {
@@ -4646,7 +4720,7 @@ function App() {
         const sessRes = await apiFetch('/ammo/range-days')
         if (sessRes.ok) {
           const sessions: RangeDaySession[] = await sessRes.json()
-          const active = sessions.find(s => s.endedAt == null)
+          const active = sessions.find(s => s.status === 'active' || (s.status == null && s.endedAt == null && s.startedAt != null))
           if (active) {
             const detailRes = await apiFetch(`/ammo/range-days/${active.id}`)
             if (detailRes.ok) setActiveSession(await detailRes.json())
@@ -4706,6 +4780,17 @@ function App() {
     )
   }
 
+  if (page === 'range-day-stage') {
+    return (
+      <RangeDayStartWizard
+        staged={stageInitial == null}
+        initial={stageInitial}
+        onComplete={() => { setStageInitial(null); setPage('dashboard'); window.location.hash = '#/range-days' }}
+        onCancel={() => { setStageInitial(null); setPage('dashboard') }}
+      />
+    )
+  }
+
   if (page === 'range-day-start') {
     return (
       <RangeDayStartWizard
@@ -4723,6 +4808,8 @@ function App() {
       activeSession={activeSession}
       onResumeRangeDay={() => setPage('range-day')}
       onStartRangeDay={() => setPage('range-day-start')}
+      onPackRangeDay={() => { setStageInitial(null); setPage('range-day-stage') }}
+      onEditStaged={(init: StageInitial) => { setStageInitial(init); setPage('range-day-stage') }}
       theme={theme}
       onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
     />
