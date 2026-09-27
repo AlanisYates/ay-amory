@@ -1940,7 +1940,7 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
 type EntryRow = { id: number; ammoTypeId: number; quantity: number; location: string; isBalancing: boolean; weaponId?: number | null }
 type TxWithEntries = Omit<Transaction, 'entries'> & { entries: EntryRow[] }
 
-function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { item: InventoryItem; onBack: () => void; refreshKey?: number; onWeaponClick?: (weaponId: number) => void }) {
+function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick, onChanged }: { item: InventoryItem; onBack: () => void; refreshKey?: number; onWeaponClick?: (weaponId: number) => void; onChanged?: () => void }) {
   const [transactions, setTransactions] = useState<TxWithEntries[]>([])
   const [weapons, setWeapons] = useState<Weapon[]>([])
   const [loading, setLoading] = useState(true)
@@ -1996,6 +1996,47 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
   // session blocks, newest first; standalone transactions stay flat.
   const blocks = useHistoryBlocks(rows)
   const [historyFilter, setHistoryFilter] = useState<NetClass | 'all'>('all')
+  const [showBuy, setShowBuy] = useState(false)
+  const handleBuy = async (rows: AddAmmoRow[], note: string) => {
+    for (const r of rows) {
+      if (r.kind === 'existing') {
+        await apiFetch('/ammo/transactions', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: 'acquisition',
+            occurredAt: new Date().toISOString(),
+            note: note || null,
+            ...(r.price ? { price: Math.round(Number(r.price) * 100) } : {}),
+            entries: [{ ammoTypeId: r.ammoTypeId, quantity: r.quantity }],
+          }),
+        })
+      } else {
+        const res = await apiFetch('/ammo/types', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: r.name,
+            caliber: r.caliber,
+            ...(r.brand ? { brand: r.brand } : {}),
+            ...(r.grain ? { grain: Number(r.grain) } : {}),
+          }),
+        })
+        if (!res.ok) continue
+        const t = await res.json()
+        await apiFetch('/ammo/transactions', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: 'acquisition',
+            occurredAt: new Date().toISOString(),
+            note: note || null,
+            ...(r.price ? { price: Math.round(Number(r.price) * 100) } : {}),
+            entries: [{ ammoTypeId: t.id, quantity: r.quantity }],
+          }),
+        })
+      }
+    }
+    setShowBuy(false)
+    onChanged?.()
+  }
 
   const historyCounts = useMemo(() => {
     const counts: Record<NetClass | 'all', number> = { all: blocks.length, in: 0, out: 0, flat: 0 }
@@ -2239,8 +2280,8 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
 
       {/* Hero — identity + lifetime */}
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mt-4">
-        <div className="grid gap-6 md:grid-cols-2">
-          <div className="min-w-0 flex flex-col">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
             <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{item.name}</h2>
             <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500 dark:text-neutral-400">
               <span className="bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">{item.caliber}</span>
@@ -2248,31 +2289,37 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
               {item.brand && <span>· {item.brand}</span>}
               {item.description && <span>· {item.description}</span>}
             </div>
-            <div className="flex-1 flex flex-col items-center justify-center py-4">
-              <p className={`text-5xl font-bold tabular-nums ${item.balance <= 0 ? 'text-red-600 dark:text-red-500' : totalBought > 0 && item.balance / totalBought < 0.25 ? 'text-amber-600 dark:text-amber-500' : 'text-neutral-900 dark:text-neutral-100'}`}>{item.balance.toLocaleString()}</p>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mt-1">in storage</p>
-            </div>
           </div>
-          <div className="grid grid-cols-2 gap-2 content-center">
-            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
-              <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{avgPrice ? `$${avgPrice.perRound.toFixed(2)}` : '—'}</p>
-              <p className="text-[10px] text-neutral-400 dark:text-neutral-500">AVG PAID · $</p>
-            </div>
-            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
-              <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{totalBought > 0 ? `${totalBought.toLocaleString()}` : '—'}</p>
-              <p className="text-[10px] text-neutral-400 dark:text-neutral-500">BOUGHT · RDS</p>
-            </div>
-            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
-              <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{avgPrice ? `$${(avgPrice.totalCents / 100).toFixed(2)}` : '—'}</p>
-              <p className="text-[10px] text-neutral-400 dark:text-neutral-500">SPENT · $</p>
-            </div>
-            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
-              <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{totalFired > 0 ? `${totalFired.toLocaleString()}` : '—'}</p>
-              <p className="text-[10px] text-neutral-400 dark:text-neutral-500">FIRED · RDS</p>
-            </div>
+          <div className="text-right shrink-0">
+            <p className="text-3xl font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{item.balance.toLocaleString()}</p>
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mt-0.5">in storage</p>
+            <button onClick={() => setShowBuy(true)} className="mt-2 text-xs px-3 py-1.5 bg-black text-white rounded-lg cursor-pointer hover:opacity-80">+ Log buy</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
+            <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{avgPrice ? `$${avgPrice.perRound.toFixed(2)}` : '—'}</p>
+            <p className="text-[10px] text-neutral-400 dark:text-neutral-500">AVG PAID · $</p>
+          </div>
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
+            <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{totalBought > 0 ? `${totalBought.toLocaleString()}` : '—'}</p>
+            <p className="text-[10px] text-neutral-400 dark:text-neutral-500">BOUGHT · RDS</p>
+          </div>
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
+            <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{avgPrice ? `$${(avgPrice.totalCents / 100).toFixed(2)}` : '—'}</p>
+            <p className="text-[10px] text-neutral-400 dark:text-neutral-500">SPENT · $</p>
+          </div>
+          <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-3 text-center">
+            <p className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{totalFired > 0 ? `${totalFired.toLocaleString()}` : '—'}</p>
+            <p className="text-[10px] text-neutral-400 dark:text-neutral-500">FIRED · RDS</p>
           </div>
         </div>
       </div>
+      {showBuy && (
+        <div className="mt-4">
+          <AddAmmoModal ammoTypes={[item]} caption={`Log a purchase of ${item.name}. Adds to your inventory.`} onSubmit={handleBuy} onClose={() => setShowBuy(false)} />
+        </div>
+      )}
 
       {/* Usage by firearm */}
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mt-4">
@@ -2396,7 +2443,7 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
 
 // ── Caliber Detail View ───────────────────────────────────────────────────
 
-function CaliberDetailView({ group, refreshKey = 0, onBack, onWeaponClick }: { group: CaliberGroup; refreshKey?: number; onBack: () => void; onWeaponClick?: (weaponId: number) => void }) {
+function CaliberDetailView({ group, refreshKey = 0, onBack, onWeaponClick, onChanged }: { group: CaliberGroup; refreshKey?: number; onBack: () => void; onWeaponClick?: (weaponId: number) => void; onChanged?: () => void }) {
   const [txMap, setTxMap] = useState<Map<number, TxWithEntries>>(new Map())
   const [loading, setLoading] = useState(true)
   const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null)
@@ -2546,7 +2593,7 @@ function CaliberDetailView({ group, refreshKey = 0, onBack, onWeaponClick }: { g
 
   if (viewingItem) {
     const liveItem = group.items.find(i => i.id === viewingItem.id) ?? viewingItem
-    return <AmmoTypeDetailView item={liveItem} refreshKey={refreshKey} onBack={() => setViewingItem(null)} onWeaponClick={onWeaponClick} />
+    return <AmmoTypeDetailView item={liveItem} refreshKey={refreshKey} onBack={() => setViewingItem(null)} onWeaponClick={onWeaponClick} onChanged={onChanged} />
   }
 
   return (
@@ -4186,6 +4233,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
             <CaliberDetailView
               group={viewingCaliber}
               refreshKey={txRefreshKey}
+              onChanged={handleActionSuccess}
               onBack={() => setViewingCaliberName(null)}
               onWeaponClick={id => setViewingWeaponId(id)}
             />
@@ -4210,6 +4258,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
             <CaliberDetailView
               group={viewingCaliber}
               refreshKey={txRefreshKey}
+              onChanged={handleActionSuccess}
               onBack={() => setViewingCaliberName(null)}
               onWeaponClick={id => setViewingWeaponId(id)}
             />
