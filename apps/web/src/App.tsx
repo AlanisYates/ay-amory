@@ -3321,7 +3321,7 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
                   { value: practice.perSession.toLocaleString(), label: 'avg/session', sub: '' },
                   { value: practice.last30.toLocaleString(), label: 'last 30d', sub: '' },
                 ].map(s => (
-                  <div key={s.label} className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-2 text-center">
+                  <div key={s.label} className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-2 py-2 text-center flex flex-col justify-center">
                     <p className="text-sm font-bold tabular-nums">{s.value}</p>
                     <p className="text-[10px] text-neutral-400 dark:text-neutral-500">{s.label}</p>
                     {s.sub !== '' && <p className="text-[10px] leading-tight text-neutral-400 dark:text-neutral-500 tabular-nums">{s.sub}</p>}
