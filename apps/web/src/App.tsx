@@ -1997,6 +1997,22 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick, onCha
   const blocks = useHistoryBlocks(rows)
   const [historyFilter, setHistoryFilter] = useState<NetClass | 'all'>('all')
   const [showBuy, setShowBuy] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editData, setEditData] = useState<Partial<AmmoType>>({})
+  const [editError, setEditError] = useState('')
+  const saveEdit = async () => {
+    setEditError('')
+    const res = await apiFetch(`/ammo/types/${item.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(editData),
+    })
+    if (!res.ok) {
+      try { const d = await res.json(); setEditError(d.error || 'Error') } catch { setEditError('Error') }
+      return
+    }
+    setEditing(false)
+    onChanged?.()
+  }
   const handleBuy = async (rows: AddAmmoRow[], note: string) => {
     for (const r of rows) {
       if (r.kind === 'existing') {
@@ -2280,9 +2296,36 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick, onCha
 
       {/* Hero — identity + lifetime */}
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6 shadow-sm mt-4">
+        {editing ? (
+          <div className="flex flex-col gap-2">
+            {editError && <p className="text-red-500 text-sm">{editError}</p>}
+            <input value={editData.name ?? ''} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} placeholder="Name"
+              className="text-sm px-2 py-1.5 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100" />
+            <CaliberSelect value={editData.caliber ?? ''} onChange={v => setEditData(d => ({ ...d, caliber: v }))} />
+            <div className="grid grid-cols-2 gap-2">
+              <input type="number" value={editData.grain ?? ''} onChange={e => setEditData(d => ({ ...d, grain: e.target.value === '' ? null : Number(e.target.value) }))} placeholder="Grain"
+                className="text-sm px-2 py-1.5 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100" />
+              <input value={editData.brand ?? ''} onChange={e => setEditData(d => ({ ...d, brand: e.target.value }))} placeholder="Brand"
+                className="text-sm px-2 py-1.5 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100" />
+            </div>
+            <input value={editData.description ?? ''} onChange={e => setEditData(d => ({ ...d, description: e.target.value }))} placeholder="Description (optional)"
+              className="text-sm px-2 py-1.5 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100" />
+            <div className="flex gap-2 mt-1">
+              <button onClick={saveEdit} className="text-xs px-3 py-1.5 bg-black text-white rounded-lg cursor-pointer hover:opacity-80">Save</button>
+              <button onClick={() => setEditing(false)} className="text-xs px-3 py-1.5 border border-neutral-300 dark:border-neutral-700 rounded-lg cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{item.name}</h2>
+<div className="flex items-center gap-2">
+              <h2 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 truncate">{item.name}</h2>
+              <button onClick={() => { setEditData({ name: item.name, caliber: item.caliber, grain: item.grain, brand: item.brand, description: item.description }); setEditing(true) }}
+                className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 shrink-0 cursor-pointer" aria-label="Edit ammo type">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
+              </button>
+            </div>
             <div className="flex items-center gap-2 mt-1 text-sm text-neutral-500 dark:text-neutral-400">
               <span className="bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">{item.caliber}</span>
               {item.grain && <span>{item.grain}gr</span>}
@@ -2293,7 +2336,7 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick, onCha
           <div className="text-right shrink-0">
             <p className="text-3xl font-bold tabular-nums text-neutral-900 dark:text-neutral-100">{item.balance.toLocaleString()}</p>
             <p className="text-[11px] text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mt-0.5">in storage</p>
-            <button onClick={() => setShowBuy(true)} className="mt-2 text-xs px-3 py-1.5 bg-black text-white rounded-lg cursor-pointer hover:opacity-80">+ Log buy</button>
+            <button onClick={() => setShowBuy(true)} className="mt-2 text-sm px-4 py-2 bg-black text-white rounded-lg cursor-pointer hover:opacity-80">+ Log buy</button>
           </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
@@ -2314,6 +2357,8 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick, onCha
             <p className="text-[10px] text-neutral-400 dark:text-neutral-500">FIRED · RDS</p>
           </div>
         </div>
+          </>
+        )}
       </div>
       {showBuy && (
         <div className="mt-4">
