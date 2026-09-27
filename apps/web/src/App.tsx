@@ -2209,23 +2209,23 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
       </p>
 
       {/* Stats card */}
-      <div className="rounded-[20px] p-5 mt-4 bg-[#191d2b] text-white">
-        <p className="text-[10px] tracking-[1.5px] text-[#9aa0b4] font-semibold">AMMO · LIFETIME</p>
+      <div className="rounded-[20px] p-5 mt-4 bg-white dark:bg-[#191d2b] text-neutral-900 dark:text-white border border-neutral-200 dark:border-transparent shadow-sm">
+        <p className="text-[10px] tracking-[1.5px] text-neutral-500 dark:text-[#9aa0b4] font-semibold">AMMO · LIFETIME</p>
         <div className="flex mt-3">
           <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-[#9aa0b4]">AVG PAID</p>
+            <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">AVG PAID</p>
             <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `${avgPrice.perRound.toFixed(2)}` : '—'}</p>
           </div>
           <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-[#9aa0b4]">BOUGHT</p>
+            <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">BOUGHT</p>
             <p className="text-[15px] font-bold tabular-nums">{totalBought > 0 ? `${totalBought.toLocaleString()}` : '—'}</p>
           </div>
           <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-[#9aa0b4]">SPENT</p>
-            <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `${(avgPrice.totalCents / 100).toFixed(2)}` : '—'}</p>
+            <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">SPENT</p>
+            <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `$${(avgPrice.totalCents / 100).toFixed(2)}` : '—'}</p>
           </div>
           <div className="flex-1">
-            <p className="text-[9px] tracking-[1px] text-[#9aa0b4]">FIRED</p>
+            <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">FIRED</p>
             <p className="text-[15px] font-bold tabular-nums">{totalFired > 0 ? `${totalFired.toLocaleString()}` : '—'}</p>
           </div>
         </div>
