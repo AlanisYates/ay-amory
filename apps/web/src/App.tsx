@@ -2509,10 +2509,9 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick, onCha
 
 // ── Caliber Detail View ───────────────────────────────────────────────────
 
-function CaliberDetailView({ group, refreshKey = 0, onBack, onWeaponClick, onChanged }: { group: CaliberGroup; refreshKey?: number; onBack: () => void; onWeaponClick?: (weaponId: number) => void; onChanged?: () => void }) {
+function CaliberDetailView({ group, refreshKey = 0, onBack, onWeaponClick, onChanged, viewingItemId, onViewItem }: { group: CaliberGroup; refreshKey?: number; onBack: () => void; onWeaponClick?: (weaponId: number) => void; onChanged?: () => void; viewingItemId?: number | null; onViewItem?: (id: number | null) => void }) {
   const [txMap, setTxMap] = useState<Map<number, TxWithEntries>>(new Map())
   const [loading, setLoading] = useState(true)
-  const [viewingItem, setViewingItem] = useState<InventoryItem | null>(null)
   const [expandedSessions, setExpandedSessions] = useState<number[] | null>(null)
   const [historyFilter, setHistoryFilter] = useState<NetClass | 'all'>('all')
 
@@ -2657,9 +2656,11 @@ function CaliberDetailView({ group, refreshKey = 0, onBack, onWeaponClick, onCha
       </span>
     )
 
-  if (viewingItem) {
-    const liveItem = group.items.find(i => i.id === viewingItem.id) ?? viewingItem
-    return <AmmoTypeDetailView item={liveItem} refreshKey={refreshKey} onBack={() => setViewingItem(null)} onWeaponClick={onWeaponClick} onChanged={onChanged} />
+  if (viewingItemId != null) {
+    const liveItem = group.items.find(i => i.id === viewingItemId) ?? null
+    if (liveItem) {
+    return <AmmoTypeDetailView item={liveItem} refreshKey={refreshKey} onBack={() => onViewItem?.(null)} onWeaponClick={onWeaponClick} onChanged={onChanged} />
+    }
   }
 
   return (
@@ -2735,7 +2736,7 @@ function CaliberDetailView({ group, refreshKey = 0, onBack, onWeaponClick, onCha
         {group.items.map(item => (
           <button
             key={item.id}
-            onClick={() => setViewingItem(item)}
+            onClick={() => onViewItem?.(item.id)}
             className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-sm text-left hover:border-neutral-400 hover:shadow-md transition-all cursor-pointer group"
           >
             <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 truncate group-hover:text-neutral-900 dark:group-hover:text-neutral-100">{item.name}</p>
@@ -4094,6 +4095,39 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
   const [tab, setTab] = useState<'inventory' | 'ammo' | 'types' | 'weapons' | 'history' | 'range-days' | 'backup'>('inventory')
   const [viewingCaliberName, setViewingCaliberName] = useState<string | null>(null)
   const [viewingWeaponId, setViewingWeaponId] = useState<number | null>(null)
+  const [viewingAmmoId, setViewingAmmoId] = useState<number | null>(null)
+  const routeRef = useRef('')
+  const go = (p: { tab?: 'inventory' | 'ammo' | 'types' | 'weapons' | 'history' | 'range-days' | 'backup'; caliber?: string | null; weaponId?: number | null; ammoId?: number | null }) => {
+    const next = {
+      tab,
+      caliber: viewingCaliberName,
+      weaponId: viewingWeaponId,
+      ammoId: viewingAmmoId,
+      ...p,
+    }
+    setTab(next.tab)
+    setViewingCaliberName(next.caliber)
+    setViewingWeaponId(next.weaponId)
+    setViewingAmmoId(next.ammoId)
+    const h = encodeRoute(next)
+    routeRef.current = h
+    if (window.location.hash !== h) window.location.hash = h
+  }
+  useEffect(() => {
+    const apply = (h: string) => {
+      if (h === routeRef.current) return
+      routeRef.current = h
+      const r = decodeRoute(h)
+      setTab(r.tab as typeof tab)
+      setViewingCaliberName(r.caliber)
+      setViewingWeaponId(r.weaponId)
+      setViewingAmmoId(r.ammoId)
+    }
+    apply(window.location.hash || '#/inventory')
+    const onHash = () => apply(window.location.hash)
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
   const [txRefreshKey, setTxRefreshKey] = useState(0)
   const [weaponTotals, setWeaponTotals] = useState<Record<number, number>>({})
   const [weaponCleanings, setWeaponCleanings] = useState<Record<number, WeaponCleaning[]>>({})
@@ -4277,7 +4311,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         {/* Tabs */}
         <div className="flex gap-1 border-b border-neutral-200 dark:border-neutral-700 mb-6 mt-8 overflow-x-auto">
           {(['inventory', 'ammo', 'types', 'weapons', 'history', 'range-days', 'backup'] as const).map(t => (
-            <button key={t} onClick={() => { setTab(t); setViewingCaliberName(null); setViewingWeaponId(null); setActiveAction(null) }}
+            <button key={t} onClick={() => { setActiveAction(null); go({ tab: t, caliber: null, weaponId: null, ammoId: null }) }}
               className={`px-4 py-2 text-sm font-medium capitalize cursor-pointer transition-colors whitespace-nowrap ${
                 tab === t
                   ? 'border-b-2 border-black dark:border-white text-black dark:text-white'
@@ -4292,7 +4326,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
           viewingWeapon ? (
             <WeaponDetailView
               weaponId={viewingWeapon.id}
-              onBack={() => setViewingWeaponId(null)}
+              onBack={() => go({ weaponId: null })}
               onRefresh={loadInventory}
             />
           ) : viewingCaliber ? (
@@ -4300,8 +4334,10 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
               group={viewingCaliber}
               refreshKey={txRefreshKey}
               onChanged={handleActionSuccess}
-              onBack={() => setViewingCaliberName(null)}
-              onWeaponClick={id => setViewingWeaponId(id)}
+              onBack={() => go({ caliber: null, ammoId: null })}
+              onWeaponClick={id => go({ weaponId: id })}
+              viewingItemId={viewingAmmoId}
+              onViewItem={(id: number | null) => go({ ammoId: id })}
             />
           ) : inventoryLoading ? (
             <p className="text-neutral-400 dark:text-neutral-500 text-sm">Loading inventory...</p>
@@ -4311,10 +4347,10 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
               weapons={weapons}
               totals={weaponTotals}
               cleanings={weaponCleanings}
-              onCaliberClick={g => setViewingCaliberName(g.caliber)}
-              onWeaponClick={id => setViewingWeaponId(id)}
-              onViewAmmo={() => setTab('ammo')}
-              onViewWeapons={() => setTab('weapons')}
+              onCaliberClick={g => go({ caliber: g.caliber })}
+              onWeaponClick={id => go({ weaponId: id })}
+              onViewAmmo={() => go({ tab: 'ammo', caliber: null, weaponId: null, ammoId: null })}
+              onViewWeapons={() => go({ tab: 'weapons', caliber: null, weaponId: null, ammoId: null })}
             />
           )
         )}
@@ -4325,8 +4361,10 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
               group={viewingCaliber}
               refreshKey={txRefreshKey}
               onChanged={handleActionSuccess}
-              onBack={() => setViewingCaliberName(null)}
-              onWeaponClick={id => setViewingWeaponId(id)}
+              onBack={() => go({ caliber: null, ammoId: null })}
+              onWeaponClick={id => go({ weaponId: id })}
+              viewingItemId={viewingAmmoId}
+              onViewItem={(id: number | null) => go({ ammoId: id })}
             />
           ) : (
             <div>
@@ -4374,7 +4412,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
                     {ammoGroups.map(group => (
                       <div key={group.caliber} className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-sm overflow-hidden flex flex-col">
                         <button
-                          onClick={() => setViewingCaliberName(group.caliber)}
+                          onClick={() => go({ caliber: group.caliber })}
                           className="flex-1 p-5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
                         >
                           <div className="flex items-start justify-between mb-1">
@@ -4396,7 +4434,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
                             Adjust
                           </button>
                           <button
-                            onClick={() => setViewingCaliberName(group.caliber)}
+                            onClick={() => go({ caliber: group.caliber })}
                             className="flex-1 text-xs px-2 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg hover:border-neutral-400 cursor-pointer"
                           >
                             History
@@ -4459,11 +4497,11 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
           viewingWeapon ? (
             <WeaponDetailView
               weaponId={viewingWeapon.id}
-              onBack={() => setViewingWeaponId(null)}
+              onBack={() => go({ weaponId: null })}
               onRefresh={loadInventory}
             />
           ) : (
-            <WeaponManager weapons={weapons} onRefresh={loadInventory} onWeaponClick={id => setViewingWeaponId(id)} />
+            <WeaponManager weapons={weapons} onRefresh={loadInventory} onWeaponClick={id => go({ weaponId: id })} />
           )
         )}
 
@@ -4534,6 +4572,47 @@ function AuthView({ onLogin }: { onLogin: (user: User, token: string) => void })
 }
 
 // ── App root ──────────────────────────────────────────────────────────────
+
+const APP_TABS = ['inventory', 'ammo', 'types', 'weapons', 'history', 'range-days', 'backup'] as const
+
+function encodeRoute(r: { tab: string; caliber: string | null; weaponId: number | null; ammoId: number | null }): string {
+  let h = '#/' + r.tab
+  if (r.tab === 'weapons' && r.weaponId != null) return h + '/' + r.weaponId
+  if (r.caliber) h += '/' + encodeURIComponent(r.caliber)
+  if (r.caliber && r.ammoId != null) h += '/' + r.ammoId
+  if (r.weaponId != null) h += '/w/' + r.weaponId
+  return h
+}
+
+function decodeRoute(hash: string): { tab: string; caliber: string | null; weaponId: number | null; ammoId: number | null } {
+  const fallback = { tab: 'inventory', caliber: null, weaponId: null, ammoId: null }
+  try {
+    const segs = hash.replace(/^#\/?/, '').split('/').filter(s => s.length > 0)
+    if (segs.length === 0 || !(APP_TABS as readonly string[]).includes(segs[0])) return fallback
+    const tab = segs[0]
+    const rest = segs.slice(1)
+    let caliber: string | null = null
+    let weaponId: number | null = null
+    let ammoId: number | null = null
+    if (tab === 'weapons') {
+      if (rest[0] != null && /^\d+$/.test(rest[0])) weaponId = Number(rest[0])
+    } else {
+      let i = 0
+      if (rest[0] != null && rest[0] !== 'w') {
+        caliber = decodeURIComponent(rest[0])
+        i = 1
+      }
+      if (caliber != null && rest[i] != null && /^\d+$/.test(rest[i])) {
+        ammoId = Number(rest[i])
+        i += 1
+      }
+      if (rest[i] === 'w' && rest[i + 1] != null && /^\d+$/.test(rest[i + 1])) weaponId = Number(rest[i + 1])
+    }
+    return { tab, caliber, weaponId, ammoId }
+  } catch {
+    return fallback
+  }
+}
 
 function App() {
   const [user, setUser] = useState<User | null>(null)
