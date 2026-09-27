@@ -2214,11 +2214,11 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
         <div className="flex mt-3">
           <div className="flex-1">
             <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">AVG PAID</p>
-            <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `${avgPrice.perRound.toFixed(2)}` : '—'}</p>
+            <p className="text-[15px] font-bold tabular-nums">{avgPrice ? `$${avgPrice.perRound.toFixed(2)}` : '—'}</p>
           </div>
           <div className="flex-1">
             <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">BOUGHT</p>
-            <p className="text-[15px] font-bold tabular-nums">{totalBought > 0 ? `${totalBought.toLocaleString()}` : '—'}</p>
+            <p className="text-[15px] font-bold tabular-nums">{totalBought > 0 ? `${totalBought.toLocaleString()} rds` : '—'}</p>
           </div>
           <div className="flex-1">
             <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">SPENT</p>
@@ -2226,7 +2226,7 @@ function AmmoTypeDetailView({ item, onBack, refreshKey = 0, onWeaponClick }: { i
           </div>
           <div className="flex-1">
             <p className="text-[9px] tracking-[1px] text-neutral-500 dark:text-[#9aa0b4]">FIRED</p>
-            <p className="text-[15px] font-bold tabular-nums">{totalFired > 0 ? `${totalFired.toLocaleString()}` : '—'}</p>
+            <p className="text-[15px] font-bold tabular-nums">{totalFired > 0 ? `${totalFired.toLocaleString()} rds` : '—'}</p>
           </div>
         </div>
       </div>
