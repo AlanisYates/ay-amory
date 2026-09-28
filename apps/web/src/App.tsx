@@ -601,7 +601,7 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
   initial?: StageInitial | null
   staged?: boolean
 }) {
-  const [step, setStep] = useState<1 | 2>(1)
+  const [step, setStep] = useState<1 | 2 | 3>(1)
   const [note, setNote] = useState(initial?.note ?? '')
   const [selectedWeapons, setSelectedWeapons] = useState<number[]>(initial?.weaponIds ?? [])
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
@@ -668,28 +668,70 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
       : [...prev, { ammoTypeId: id, quantity: clamped }])
   }
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (step === 1) { setStep(2); return }
-    setError('')
+  const validatePack = (): string | null => {
     const ammo = rows.filter(r => r.quantity > 0)
-    if (ammo.length === 0) { setError('Add at least one ammo type with quantity > 0'); return }
-    const overLimit = ammo.some(r => r.quantity > availableFor(r.ammoTypeId))
-    if (overLimit) { setError('One or more calibers exceed what you have in storage'); return }
+    if (ammo.length === 0) return 'Add at least one ammo type with quantity > 0'
+    if (ammo.some(r => r.quantity > availableFor(r.ammoTypeId))) return 'One or more calibers exceed what you have in storage'
+    return null
+  }
+  const packPayload = () => {
+    const ammo = rows.filter(r => r.quantity > 0)
+    return { note: note || null, ammo, weapons: selectedWeapons }
+  }
+  const doStage = async () => {
+    const err = validatePack()
+    if (err) { setError(err); return }
+    setError('')
     setSubmitting(true)
     const res = initial?.id != null
       ? await apiFetch(`/ammo/range-days/${initial.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ note: note || null, ammo, weapons: selectedWeapons }),
+        body: JSON.stringify(packPayload()),
       })
       : await apiFetch('/ammo/range-days', {
         method: 'POST',
-        body: JSON.stringify({ note: note || null, ammo, weapons: selectedWeapons, ...(staged ? { staged: true } : {}) }),
+        body: JSON.stringify({ ...packPayload(), staged: true }),
       })
     setSubmitting(false)
     if (!res.ok) { const d = await res.json(); setError(d.error || 'Error'); return }
-    const session = await res.json()
-    onComplete(session)
+    onComplete(await res.json())
+  }
+  const doStart = async () => {
+    const err = validatePack()
+    if (err) { setError(err); return }
+    setError('')
+    setSubmitting(true)
+    if (initial?.id != null) {
+      const saveRes = await apiFetch(`/ammo/range-days/${initial.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(packPayload()),
+      })
+      if (!saveRes.ok) { const d = await saveRes.json(); setError(d.error || 'Error'); setSubmitting(false); return }
+      const startRes = await apiFetch(`/ammo/range-days/${initial.id}/start`, { method: 'POST' })
+      setSubmitting(false)
+      if (!startRes.ok) { const d = await startRes.json(); setError(d.error || 'Error'); return }
+      onComplete(await startRes.json())
+      return
+    }
+    const res = await apiFetch('/ammo/range-days', {
+      method: 'POST',
+      body: JSON.stringify(packPayload()),
+    })
+    setSubmitting(false)
+    if (!res.ok) { const d = await res.json(); setError(d.error || 'Error'); return }
+    onComplete(await res.json())
+  }
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (step === 1) { setStep(2); return }
+    if (step === 2) {
+      const err = validatePack()
+      if (err) { setError(err); return }
+      setError('')
+      setStep(3)
+      return
+    }
+    await doStart()
   }
 
   return (
@@ -705,7 +747,7 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
       <main className="mx-auto max-w-3xl px-6 py-8">
         {/* Step heading */}
         <h2 className="text-xl font-semibold text-center text-neutral-900 dark:text-neutral-100 mb-6">
-          {step === 1 ? 'Choose your weapons' : 'Choose your ammo'}
+          {step === 1 ? 'Choose your weapons' : step === 2 ? 'Choose your ammo' : 'Review your pack'}
         </h2>
 
         {loading ? (
@@ -830,9 +872,76 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
                 <div className="flex items-center gap-3">
                   <button type="button" onClick={() => setStep(1)}
                     className="px-4 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">← Back</button>
+                  <button type="button" onClick={() => {
+                    const err = validatePack()
+                    if (err) { setError(err); return }
+                    setError('')
+                    setStep(3)
+                  }}
+                    className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">
+                    Review →
+                  </button>
+                </div>
+              </div>
+            )}
+            {step === 3 && (
+              <div className="flex flex-col gap-4">
+                <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+                  <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Weapons</p>
+                  {selectedWeapons.length === 0 ? (
+                    <p className="text-sm text-neutral-400 dark:text-neutral-500">No weapons selected</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {weapons.filter(w => selectedWeapons.includes(w.id)).map(w => (
+                        <span key={w.id} className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-full text-sm">
+                          <span className="font-medium text-neutral-800 dark:text-neutral-200">{w.name}</span>
+                          <span className="text-xs text-neutral-400 dark:text-neutral-500">{w.caliber}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+                  <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Ammo</p>
+                  {rows.filter(r => r.quantity > 0).length === 0 ? (
+                    <p className="text-sm text-neutral-400 dark:text-neutral-500">No ammo packed</p>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {rows.filter(r => r.quantity > 0).map(r => {
+                        const t = ammoTypes.find(x => x.id === r.ammoTypeId)
+                        return (
+                          <div key={r.ammoTypeId} className="flex justify-between text-sm">
+                            <span className="text-neutral-700 dark:text-neutral-300 truncate">{t?.name ?? `Type #${r.ammoTypeId}`} <span className="text-neutral-400 dark:text-neutral-500">· {t?.caliber ?? ''}</span></span>
+                            <span className="tabular-nums font-semibold text-neutral-900 dark:text-neutral-100 ml-2 shrink-0">{r.quantity.toLocaleString()} rds</span>
+                          </div>
+                        )
+                      })}
+                      <div className="flex justify-between text-sm border-t border-neutral-100 dark:border-neutral-800 pt-1.5 mt-1">
+                        <span className="font-medium text-neutral-700 dark:text-neutral-300">Total</span>
+                        <span className="tabular-nums font-bold text-neutral-900 dark:text-neutral-100">{rows.filter(r => r.quantity > 0).reduce((s, r) => s + r.quantity, 0).toLocaleString()} rds</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {note !== '' && (
+                  <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+                    <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">Note</p>
+                    <p className="text-sm text-neutral-700 dark:text-neutral-300 italic">“{note}”</p>
+                  </div>
+                )}
+                {error && <p className="text-red-500 text-sm">{error}</p>}
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setStep(2)}
+                    className="px-4 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">
+                    ← Back
+                  </button>
+                  <button type="button" onClick={() => void doStage()} disabled={submitting}
+                    className="flex-1 px-4 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-40">
+                    {initial?.id != null ? 'Save changes' : 'Stage for later'}
+                  </button>
                   <button type="submit" disabled={submitting}
                     className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer disabled:opacity-40">
-                    {initial?.id != null ? 'Save pack list' : staged ? 'Save pack list' : 'Start Range Day'}
+                    Start range day
                   </button>
                 </div>
               </div>
