@@ -217,10 +217,17 @@ export const ammoRepository = {
 
   // ── Range Day Sessions ────────────────────────────────────────────────────
 
-  async createRangeDaySession(data: { userId: number; note?: string | null }): Promise<RangeDaySession> {
+  async createRangeDaySession(data: { userId: number; note?: string | null; staged?: boolean; stagedBag?: { ammoTypeId: number; quantity: number }[] }): Promise<RangeDaySession> {
     const [session] = await db
       .insert(rangeDaySessions)
-      .values({ userId: data.userId, note: data.note ?? null, startedAt: new Date(), endedAt: null })
+      .values({
+        userId: data.userId,
+        note: data.note ?? null,
+        status: data.staged ? 'staged' : 'active',
+        startedAt: data.staged ? null : new Date(),
+        endedAt: null,
+        stagedBag: data.staged ? (data.stagedBag ?? []) : null,
+      })
       .returning()
     return session
   },
@@ -240,10 +247,43 @@ export const ammoRepository = {
   async endRangeDaySession(id: number): Promise<RangeDaySession> {
     const [session] = await db
       .update(rangeDaySessions)
-      .set({ endedAt: new Date() })
+      .set({ endedAt: new Date(), status: 'ended' })
       .where(eq(rangeDaySessions.id, id))
       .returning()
     return session
+  },
+
+  async startStagedSession(id: number): Promise<RangeDaySession> {
+    const [session] = await db
+      .update(rangeDaySessions)
+      .set({ startedAt: new Date(), status: 'active', stagedBag: null })
+      .where(eq(rangeDaySessions.id, id))
+      .returning()
+    return session
+  },
+
+  async updateStagedSession(
+    id: number,
+    data: { note?: string | null; weapons?: number[]; ammo?: { ammoTypeId: number; quantity: number }[] },
+  ): Promise<RangeDaySession> {
+    if (data.weapons !== undefined) {
+      await db.delete(rangeDayWeapons).where(eq(rangeDayWeapons.sessionId, id))
+      await this.createRangeDayWeapons(id, data.weapons)
+    }
+    const [session] = await db
+      .update(rangeDaySessions)
+      .set({
+        ...(data.note !== undefined ? { note: data.note } : {}),
+        ...(data.ammo !== undefined ? { stagedBag: data.ammo } : {}),
+      })
+      .where(eq(rangeDaySessions.id, id))
+      .returning()
+    return session
+  },
+
+  async deleteStagedSession(id: number): Promise<void> {
+    await db.delete(rangeDayWeapons).where(eq(rangeDayWeapons.sessionId, id))
+    await db.delete(rangeDaySessions).where(eq(rangeDaySessions.id, id))
   },
 
   async getBagContents(sessionId: number): Promise<BagContentItem[]> {
