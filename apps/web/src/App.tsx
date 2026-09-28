@@ -1265,6 +1265,20 @@ function ConfirmEndModal({ bag, strings, weapons, ammoTypes, onConfirm, onCancel
               </div>
             )
           })}
+
+          <div className="px-3 py-2 flex justify-between text-sm">
+            <span className="font-medium text-neutral-700 dark:text-neutral-300">Returning to storage</span>
+            <span className="font-semibold">{leftover}</span>
+          </div>
+          {bag.filter(b => b.inBag > 0).map(b => {
+            const t = ammoTypes.find(a => a.id === b.ammoTypeId)
+            return (
+              <div key={b.ammoTypeId} className="px-3 py-1.5 flex justify-between text-xs text-neutral-500 dark:text-neutral-400">
+                <span>{t?.name ?? `Type #${b.ammoTypeId}`}</span>
+                <span>{b.inBag}</span>
+              </div>
+            )
+          })}
         </div>
 
         <div className="flex gap-3 mt-4">
