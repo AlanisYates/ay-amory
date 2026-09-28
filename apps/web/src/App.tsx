@@ -871,7 +871,7 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
 
                 <div className="flex items-center gap-3">
                   <button type="button" onClick={() => setStep(1)}
-                    className="px-4 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">← Back</button>
+                    className="px-4 py-2 rounded-lg text-sm cursor-pointer bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700">← Back</button>
                   <button type="button" onClick={() => {
                     const err = validatePack()
                     if (err) { setError(err); return }
@@ -932,11 +932,11 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
                 {error && <p className="text-red-500 text-sm">{error}</p>}
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={() => setStep(2)}
-                    className="px-4 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">
+                    className="px-4 py-2 rounded-lg text-sm cursor-pointer bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700">
                     ← Back
                   </button>
                   <button type="button" onClick={() => void doStage()} disabled={submitting}
-                    className="flex-1 px-4 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-40">
+                    className="flex-1 px-4 py-2 rounded-lg text-sm cursor-pointer bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40">
                     {initial?.id != null ? 'Save changes' : 'Stage for later'}
                   </button>
                   <button type="submit" disabled={submitting}
@@ -4357,6 +4357,13 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
   const [txRefreshKey, setTxRefreshKey] = useState(0)
+  const [stagedCount, setStagedCount] = useState(0)
+  useEffect(() => {
+    apiFetch('/ammo/range-days')
+      .then(r => r.ok ? r.json() : [])
+      .then((arr: any[]) => setStagedCount(Array.isArray(arr) ? arr.filter((s: any) => s.startedAt == null).length : 0))
+      .catch(() => {})
+  }, [txRefreshKey])
   const [weaponTotals, setWeaponTotals] = useState<Record<number, number>>({})
   const [weaponCleanings, setWeaponCleanings] = useState<Record<number, WeaponCleaning[]>>({})
 
@@ -4536,6 +4543,15 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
           )}
         </div>
 
+        {stagedCount > 0 && (
+          <div className="rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-4 mb-6 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{stagedCount} pack{stagedCount !== 1 ? 's' : ''} staged</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">Packed at home · clock hasn&apos;t started</p>
+            </div>
+            <button onClick={() => go({ tab: 'range-days', caliber: null, weaponId: null, ammoId: null })} className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 shrink-0">Review →</button>
+          </div>
+        )}
         {/* Tabs */}
         <div className="flex gap-1 border-b border-neutral-200 dark:border-neutral-700 mb-6 mt-8 overflow-x-auto">
           {(['inventory', 'ammo', 'types', 'weapons', 'history', 'range-days', 'backup'] as const).map(t => (
