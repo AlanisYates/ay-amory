@@ -4302,6 +4302,100 @@ function ExportImportTab({ onImported }: { onImported?: () => void }) {
 
 type QuickAction = 'acquire' | 'expend' | 'adjust' | 'new-type' | null
 
+function StagedStartModal({ packs, onClose, onStart }: { packs: { id: number; note: string | null }[]; onClose: () => void; onStart: (s: RangeDaySession) => void }) {
+  const [selectedId, setSelectedId] = useState<number | null>(packs.length === 1 ? packs[0].id : null)
+  const [detail, setDetail] = useState<any>(null)
+  const [types, setTypes] = useState<AmmoType[]>([])
+  const [error, setError] = useState('')
+  const [starting, setStarting] = useState(false)
+  useEffect(() => {
+    apiFetch('/ammo/types').then(r => r.ok ? r.json() : []).then(t => setTypes(Array.isArray(t) ? t : [])).catch(() => {})
+  }, [])
+  useEffect(() => {
+    if (selectedId == null) { setDetail(null); return }
+    apiFetch(`/ammo/range-days/${selectedId}`).then(r => r.ok ? r.json() : null).then(setDetail).catch(() => {})
+  }, [selectedId])
+  const start = async () => {
+    if (selectedId == null) return
+    setError('')
+    setStarting(true)
+    const res = await apiFetch(`/ammo/range-days/${selectedId}/start`, { method: 'POST' })
+    setStarting(false)
+    if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.error || 'Could not start range day'); return }
+    onStart(await res.json())
+  }
+  const typeById = new Map(types.map(t => [t.id, t]))
+  const guns = (detail?.weapons ?? []).map((w: any) => w.name ?? `Gun #${w.id}`)
+  const ammo = (detail?.bag ?? []).map((b: any) => ({ name: typeById.get(b.ammoTypeId)?.name ?? `Type #${b.ammoTypeId}`, qty: b.inBag ?? b.taken ?? b.quantity ?? 0 }))
+  const total = ammo.reduce((s: number, a: any) => s + a.qty, 0)
+  const pack = packs.find(p => p.id === selectedId) ?? null
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Start staged range day</h3>
+          <button onClick={onClose} className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 text-xl leading-none cursor-pointer">×</button>
+        </div>
+        {packs.length > 1 && pack == null && (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Choose a pack</p>
+            {packs.map(p => (
+              <button key={p.id} type="button" onClick={() => setSelectedId(p.id)}
+                className="flex items-center gap-2 text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 px-3 py-2.5 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer text-left">
+                <span className="truncate text-neutral-700 dark:text-neutral-300 font-medium">{p.note || 'Untitled pack'}</span>
+                <span className="ml-auto text-neutral-300 shrink-0">›</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {pack != null && (
+          <>
+            {packs.length > 1 && (
+              <button onClick={() => setSelectedId(null)} className="text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer mb-2">← All packs</button>
+            )}
+            <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{pack.note || 'Untitled pack'}</p>
+            {detail == null ? (
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-2">Loading pack…</p>
+            ) : (
+              <>
+                {guns.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {guns.map((g: string, i: number) => (
+                      <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">{g}</span>
+                    ))}
+                  </div>
+                )}
+                {ammo.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {ammo.map((a: any, i: number) => (
+                      <div key={i} className="flex justify-between text-xs">
+                        <span className="text-neutral-600 dark:text-neutral-400 truncate">{a.name}</span>
+                        <span className="tabular-nums text-neutral-700 dark:text-neutral-300 ml-2 shrink-0">{a.qty.toLocaleString()} rds</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-xs border-t border-neutral-100 dark:border-neutral-800 pt-1.5 mt-1">
+                      <span className="font-medium text-neutral-700 dark:text-neutral-300">Total</span>
+                      <span className="tabular-nums font-bold text-neutral-900 dark:text-neutral-100">{total.toLocaleString()} rds</span>
+                    </div>
+                  </div>
+                )}
+                {guns.length === 0 && ammo.length === 0 && (
+                  <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-2">Empty pack.</p>
+                )}
+              </>
+            )}
+            {error && <p className="text-red-500 text-sm mt-3">{error}</p>}
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-3">Starting begins time tracking and moves stock to your bag.</p>
+            <button onClick={start} disabled={starting || detail == null}
+              className="mt-3 w-full px-4 py-2.5 bg-black text-white rounded-xl text-sm font-semibold hover:opacity-80 cursor-pointer disabled:opacity-40">Start range day</button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
 function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResumeRangeDay, onStartRangeDay, onPackRangeDay, onEditStaged, theme, onToggleTheme }: {
   user: User
   onLogout: () => void
@@ -4357,11 +4451,12 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
   const [txRefreshKey, setTxRefreshKey] = useState(0)
-  const [stagedCount, setStagedCount] = useState(0)
+  const [stagedPacks, setStagedPacks] = useState<{ id: number; note: string | null }[]>([])
+  const [showStagedStart, setShowStagedStart] = useState(false)
   useEffect(() => {
     apiFetch('/ammo/range-days')
       .then(r => r.ok ? r.json() : [])
-      .then((arr: any[]) => setStagedCount(Array.isArray(arr) ? arr.filter((s: any) => s.startedAt == null).length : 0))
+      .then((arr: any[]) => setStagedPacks(Array.isArray(arr) ? arr.filter((s: any) => s.startedAt == null).map((s: any) => ({ id: s.id, note: s.note ?? null })) : []))
       .catch(() => {})
   }, [txRefreshKey])
   const [weaponTotals, setWeaponTotals] = useState<Record<number, number>>({})
@@ -4534,6 +4629,12 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
               className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm bg-green-600 text-white hover:bg-green-700 transition-colors cursor-pointer">
               ⇄ Resume Range Day
             </button>
+          ) : stagedPacks.length > 0 ? (
+            <button
+              onClick={() => setShowStagedStart(true)}
+              className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm bg-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer">
+              ▷ Start staged day
+            </button>
           ) : (
             <button
               onClick={onStartRangeDay}
@@ -4541,12 +4642,15 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
               ⇄ Start Range Day
             </button>
           )}
+          {showStagedStart && (
+            <StagedStartModal packs={stagedPacks} onClose={() => setShowStagedStart(false)} onStart={s => { setShowStagedStart(false); onRangeDayStart(s) }} />
+          )}
         </div>
 
-        {stagedCount > 0 && (
+        {stagedPacks.length > 0 && (
           <div className="rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-4 mb-6 flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{stagedCount} pack{stagedCount !== 1 ? 's' : ''} staged</p>
+              <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{stagedPacks.length} pack{stagedPacks.length !== 1 ? 's' : ''} staged</p>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">Packed at home · clock hasn&apos;t started</p>
             </div>
             <button onClick={() => go({ tab: 'range-days', caliber: null, weaponId: null, ammoId: null })} className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 shrink-0">Review →</button>
