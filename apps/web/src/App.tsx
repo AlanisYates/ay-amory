@@ -4063,7 +4063,7 @@ function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClo
   )
 }
 
-function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0 }: { onPack: () => void; onEdit: (init: StageInitial) => void; onStart: (s: RangeDaySession) => void; hasActive: boolean; refreshKey?: number }) {
+function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0, onChanged }: { onPack: () => void; onEdit: (init: StageInitial) => void; onStart: (s: RangeDaySession) => void; hasActive: boolean; refreshKey?: number; onChanged?: () => void }) {
   const [sessions, setSessions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [viewingId, setViewingId] = useState<number | null>(null)
@@ -4106,6 +4106,7 @@ function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0 }: { 
     const res = await apiFetch(`/ammo/range-days/${id}`, { method: 'DELETE' })
     if (!res.ok) { const d = await res.json().catch(() => ({})); setActionError(d.error || 'Could not delete'); return }
     load()
+    onChanged?.()
   }
   const editStaged = async (id: number) => {
     setActionError('')
@@ -4871,7 +4872,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         )}
 
         {tab === 'range-days' && (
-          <RangeDaysTab onPack={onPackRangeDay} onEdit={onEditStaged} onStart={onRangeDayStart} hasActive={activeSession != null} refreshKey={txRefreshKey} />
+          <RangeDaysTab onPack={onPackRangeDay} onEdit={onEditStaged} onStart={onRangeDayStart} hasActive={activeSession != null} refreshKey={txRefreshKey} onChanged={() => setTxRefreshKey(k => k + 1)} />
         )}
 
         {tab === 'backup' && (
