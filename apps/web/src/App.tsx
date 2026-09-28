@@ -4110,8 +4110,7 @@ function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0 }: { 
     <div>
       {staged.length > 0 && (
         <div className="mb-6 rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-4">
-          <p className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">Stage at home</p>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">Pack now · clock starts only when you hit Start range day</p>
+          <p className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Stage at home</p>
           <div className="space-y-3">
             {staged.map((s: any) => {
               const d = stageDetail[s.id]
