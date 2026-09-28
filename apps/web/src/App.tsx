@@ -1131,7 +1131,7 @@ function TransactionHistory({ ammoTypes }: { ammoTypes: AmmoType[] }) {
 }
 
 function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
+  const diff = Math.max(0, Date.now() - new Date(iso).getTime())
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'just now'
   if (mins < 60) return `${mins}m ago`
@@ -1447,7 +1447,14 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
     : null
   const loadedAtList = loaded.map(g => g.loadedAt).filter((x): x is string => !!x)
   const lastLoadAt = loadedAtList.length ? loadedAtList.reduce((a, b) => (a > b ? a : b)) : null
-  const loadIsPending = remainingTotal > 0 && (!lastShot || !lastLoadAt || lastLoadAt >= lastShot.occurredAt)
+  // Date-object comparison (never lexicographic): one non-ISO timestamp must
+  // not silently flip the ordering.
+  const lastLoadTime = lastLoadAt ? new Date(lastLoadAt).getTime() : null
+  const lastShotTime = lastShot ? new Date(lastShot.occurredAt).getTime() : null
+  // A load is "fresh" only if it is newer than the latest recorded shot.
+  // Missing load timestamp (legacy loads) never counts as fresh.
+  const loadIsFresh = remainingTotal > 0 && lastLoadTime != null && (lastShotTime == null || lastLoadTime >= lastShotTime)
+  const loadIsPending = remainingTotal > 0 && (loadIsFresh || lastLoadTime == null)
   const lastShotAmmo = lastShot ? typeForId(lastShot.ammoTypeId) : null
 
   return (
@@ -1490,20 +1497,22 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
         )}
       </div>
       {toast && (
-        <div className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm font-medium text-green-700">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 13l4 4L19 7" /></svg>
+        <div role="status" className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm font-medium text-green-700 dark:bg-green-950 dark:border-green-800 dark:text-green-300">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 13l4 4L19 7" /></svg>
           <span>{toast}</span>
         </div>
       )}
-      {/* Persistent round status — survives distraction AND refresh (never toast-only) */}
+      {/* Persistent round status — survives distraction AND refresh (never toast-only).
+          "Nothing shot yet" is claimed ONLY when no shot is recorded at all;
+          otherwise we show both timestamps and let the user judge. */}
       {loadIsPending ? (
-        <div className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-amber-50 border border-amber-300 px-3 py-2.5 text-sm font-semibold text-amber-800 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-200">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>
-          <span>Round in progress — {remainingTotal} loaded{lastLoadAt ? ` · ${relativeTime(lastLoadAt)}` : ''} · nothing shot yet</span>
+        <div role="status" className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-amber-50 border border-amber-300 px-3 py-2.5 text-sm font-semibold text-amber-800 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-200">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>
+          <span>Round in progress — {remainingTotal} loaded{lastLoadAt ? ` · ${relativeTime(lastLoadAt)}` : ''}{!lastShot ? ' · nothing shot yet' : ` · last shot ${relativeTime(lastShot.occurredAt)}`}</span>
         </div>
       ) : lastShot && (
-        <div className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm font-medium text-green-700 dark:bg-green-950 dark:border-green-800 dark:text-green-300">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 13l4 4L19 7" /></svg>
+        <div role="status" className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm font-medium text-green-700 dark:bg-green-950 dark:border-green-800 dark:text-green-300">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 13l4 4L19 7" /></svg>
           <span>Last: shot {lastShot.rounds} RDS · {relativeTime(lastShot.occurredAt)}{remainingTotal > 0 ? ` · ${remainingTotal} still loaded` : ''}</span>
         </div>
       )}
@@ -1541,9 +1550,9 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
             <p className="text-xs font-semibold tracking-wide text-amber-800 dark:text-amber-200 uppercase">{stage === 'load' ? 'In Bag' : 'Loaded'}</p>
             <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">{stage === 'load' ? inBag.toLocaleString() : loadedForAmmo.toLocaleString()}<span className="text-xs font-bold ml-1">RDS</span></p>
           </div>
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-center">
-            <p className="text-xs font-semibold tracking-wide text-red-700 uppercase">Fired</p>
-            <p className="text-2xl font-bold text-red-600">{firedForAmmo.toLocaleString()}<span className="text-xs font-bold ml-1">RDS</span></p>
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-center dark:border-red-800 dark:bg-red-950">
+            <p className="text-xs font-semibold tracking-wide text-red-700 dark:text-red-300 uppercase">Fired</p>
+            <p className="text-2xl font-bold text-red-600 dark:text-red-400">{firedForAmmo.toLocaleString()}<span className="text-xs font-bold ml-1">RDS</span></p>
           </div>
         </div>
       </div>
@@ -1596,7 +1605,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
               className="flex-1 py-5 bg-red-600 text-white text-lg font-bold hover:bg-red-700 cursor-pointer disabled:opacity-40 flex items-center justify-center">
               Shoot All — {loadedForAmmo.toLocaleString()} RDS
             </button>
-            <button type="button" onClick={() => setShowPartial(v => !v)} aria-label="Options"
+            <button type="button" onClick={() => setShowPartial(v => !v)} aria-label="Partial shoot options"
               className="w-12 bg-red-700 hover:bg-red-800 text-white flex items-center justify-center border-l border-red-800 cursor-pointer shrink-0">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${showPartial ? 'rotate-180' : ''}`}><path d="M6 9l6 6 6-6" /></svg>
             </button>
@@ -1938,17 +1947,33 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
 
   const [showEndModal, setShowEndModal] = useState(false)
   const [showAcquire, setShowAcquire] = useState(false)
+  const [bagOpen, setBagOpen] = useState(false)
   const [activeWeaponId, setActiveWeaponId] = useState<number | null>(null)
   // Redo-last memory, persisted per session so a refresh doesn't lose it.
+  // Validated on read; cleared on End Range Day so revisits don't offer stale repeats.
+  const lastLoadKey = `ay-armory-last-load:${initialSession.id}`
   const [lastLoadByWeapon, setLastLoadByWeapon] = useState<Record<number, { ammoTypeId: number; quantity: number }>>(() => {
     try {
-      const raw = localStorage.getItem(`ay-armory-last-load:${initialSession.id}`)
-      return raw ? JSON.parse(raw) : {}
+      const raw = localStorage.getItem(lastLoadKey)
+      if (!raw) return {}
+      const parsed: unknown = JSON.parse(raw)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+      const clean: Record<number, { ammoTypeId: number; quantity: number }> = {}
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        const id = Number(k)
+        if (!Number.isFinite(id)) continue
+        if (!v || typeof v !== 'object') continue
+        const { ammoTypeId, quantity } = v as { ammoTypeId?: unknown; quantity?: unknown }
+        if (typeof ammoTypeId !== 'number' || !Number.isFinite(ammoTypeId)) continue
+        if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) continue
+        clean[id] = { ammoTypeId, quantity }
+      }
+      return clean
     } catch { return {} }
   })
   useEffect(() => {
-    try { localStorage.setItem(`ay-armory-last-load:${session.id}`, JSON.stringify(lastLoadByWeapon)) } catch { /* ignore */ }
-  }, [session.id, lastLoadByWeapon])
+    try { localStorage.setItem(lastLoadKey, JSON.stringify(lastLoadByWeapon)) } catch { /* ignore */ }
+  }, [lastLoadKey, lastLoadByWeapon])
   // Live clock for "Xm ago" labels (display-only, see useNow).
   useNow(30000)
   const sessionFiredTotal = strings.reduce((s, x) => s + x.rounds, 0)
@@ -2053,6 +2078,7 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
       body: JSON.stringify({}),
     })
     if (!res.ok) { alert('Error ending session'); return }
+    try { localStorage.removeItem(lastLoadKey) } catch { /* ignore */ }
     setShowEndModal(false)
     onSessionEnd()
   }
@@ -2081,7 +2107,7 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
               🎒 {bagTotal.toLocaleString()} in bag
             </span>
             {sessionFiredTotal > 0 && (
-              <span className="text-xs px-2.5 py-1 rounded-full font-bold border border-red-200 bg-red-50 text-red-700" title="Rounds fired this session">
+              <span className="text-xs px-2.5 py-1 rounded-full font-bold border border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300" title="Rounds fired this session">
                 {sessionFiredTotal.toLocaleString()} fired{sessionLastShot ? ` · last ${relativeTime(sessionLastShot.occurredAt)}` : ''}
               </span>
             )}
@@ -2141,7 +2167,11 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
                       ? wStrings.reduce((a, b) => (new Date(a.occurredAt) > new Date(b.occurredAt) ? a : b)).occurredAt
                       : null
                     return (
-                      <div key={w.id} onClick={() => !isActive && setActiveWeaponId(w.id)} className={isActive ? '' : 'cursor-pointer'}>
+                      <div key={w.id} onClick={() => !isActive && setActiveWeaponId(w.id)}
+                        role={!isActive ? 'button' : undefined} tabIndex={!isActive ? 0 : undefined}
+                        aria-label={!isActive ? `Switch to ${w.name}` : undefined}
+                        onKeyDown={!isActive ? (e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveWeaponId(w.id) } }) : undefined}
+                        className={isActive ? '' : 'cursor-pointer'}>
                         {isActive ? (
                           isOut ? (
                             <OutOfAmmoCard weapon={w} firedTotal={wFired} lastShotAt={wLastShotAt}
@@ -2151,12 +2181,12 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
                             <WeaponRangeCard weapon={w} bag={bag} ammoTypes={ammoTypes} gunLoaded={gunLoaded} strings={strings} onAction={doAction} typeForId={typeForId} lastLoad={lastLoadByWeapon[w.id] ?? null} onSetLastLoad={v => setLastLoadByWeapon(m => { const n = { ...m }; if (v) n[w.id] = v; else delete n[w.id]; return n })} />
                           )
                         ) : (
-                          <div className={`rounded-xl border p-3 flex items-center justify-between ${isOut ? 'border-red-200 bg-red-50 opacity-100' : isLoaded ? 'border-amber-300 bg-amber-50 opacity-100' : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 opacity-60 hover:opacity-100'}`}>
+                          <div className={`rounded-xl border p-3 flex items-center justify-between ${isOut ? 'border-red-200 bg-red-50 opacity-100 dark:border-red-800 dark:bg-red-950' : isLoaded ? 'border-amber-300 bg-amber-50 opacity-100 dark:border-amber-700 dark:bg-amber-950' : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 opacity-60 hover:opacity-100'}`}>
                             <div>
-                              <p className={`text-sm font-semibold ${isOut ? 'text-red-700' : isLoaded ? 'text-amber-800' : 'text-neutral-900 dark:text-neutral-100'}`}>{w.name}</p>
-                              <p className={`text-xs ${isOut ? 'text-red-500' : isLoaded ? 'text-amber-700' : 'text-neutral-500 dark:text-neutral-400'}`}>{w.caliber} · {w.type}{isOut ? ' · Out of ammo' : isLoaded ? ' · Loaded' : ''}</p>
+                              <p className={`text-sm font-semibold ${isOut ? 'text-red-700 dark:text-red-300' : isLoaded ? 'text-amber-800 dark:text-amber-200' : 'text-neutral-900 dark:text-neutral-100'}`}>{w.name}</p>
+                              <p className={`text-xs ${isOut ? 'text-red-500 dark:text-red-400' : isLoaded ? 'text-amber-700 dark:text-amber-300' : 'text-neutral-500 dark:text-neutral-400'}`}>{w.caliber} · {w.type}{isOut ? ' · Out of ammo' : isLoaded ? ' · Loaded' : ''}</p>
                             </div>
-                            <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${isOut ? 'bg-red-100 text-red-700 border-red-200' : isLoaded ? 'bg-amber-500 text-white border-amber-500' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700'}`}>{isOut ? 'Out' : `${loadedForW} RDS`}</span>
+                            <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${isOut ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900 dark:text-red-200 dark:border-red-800' : isLoaded ? 'bg-amber-500 text-white border-amber-500' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700'}`}>{isOut ? 'Out' : `${loadedForW} RDS`}</span>
                           </div>
                         )}
                       </div>
@@ -2197,10 +2227,10 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
 
         {/* Bag collapsed out of the firing view — full table one tap away */}
         <section>
-          <details>
-            <summary className="flex items-center justify-between cursor-pointer list-none">
-              <h2 className="text-lg font-semibold">🎒 Bag — {bagTotal.toLocaleString()} RDS</h2>
-              <span className="text-sm text-neutral-500 dark:text-neutral-400 underline">Show contents</span>
+          <details onToggle={e => setBagOpen((e.target as HTMLDetailsElement).open)}>
+            <summary className="flex items-center justify-between cursor-pointer">
+              <span className="text-lg font-semibold">🎒 Bag — {bagTotal.toLocaleString()} RDS</span>
+              <span className="text-sm text-neutral-500 dark:text-neutral-400 underline">{bagOpen ? 'Hide contents' : 'Show contents'}</span>
             </summary>
             <div className="flex items-center justify-end mt-3 mb-3">
               <button onClick={() => setShowAcquire(true)}
