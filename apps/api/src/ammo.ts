@@ -360,11 +360,7 @@ ammo.get('/range-days/:id', async (c) => {
     : entryBag
   const weapons = await ammoRepository.listRangeDayWeapons(id)
   const strings = await ammoRepository.listRangeDayStrings(id)
-  const gunLoadedMap = await ammoRepository.getGunLoaded(id)
-  const gunLoaded = Array.from(gunLoadedMap.entries()).map(([key, rounds]) => {
-    const [weaponId, ammoTypeId] = key.split(':').map(Number)
-    return { weaponId, ammoTypeId, rounds }
-  })
+  const gunLoaded = await gunLoadedWithTimestamps(id)
 
   return c.json({ ...session, bag, weapons, strings, gunLoaded })
 })
@@ -421,11 +417,20 @@ ammo.post('/range-days/:id/acquire', async (c) => {
 
 // ── Load / Shoot / Return (live shooting flow) ────────────────────────────
 
-function gunLoadedToArr(map: Map<string, number>) {
+function gunLoadedToArr(map: Map<string, number>, loadedAt?: Map<string, string>) {
   return Array.from(map.entries()).map(([key, rounds]) => {
     const [weaponId, ammoTypeId] = key.split(':').map(Number)
-    return { weaponId, ammoTypeId, rounds }
+    return { weaponId, ammoTypeId, rounds, loadedAt: loadedAt?.get(key) ?? null }
   })
+}
+
+/** gunLoaded counts + latest load timestamp per (weapon, ammo). */
+async function gunLoadedWithTimestamps(sessionId: number) {
+  const [map, at] = await Promise.all([
+    ammoRepository.getGunLoaded(sessionId),
+    ammoRepository.getLastLoadAt(sessionId),
+  ])
+  return gunLoadedToArr(map, at)
 }
 
 ammo.post('/range-days/:id/load', async (c) => {
@@ -446,7 +451,7 @@ ammo.post('/range-days/:id/load', async (c) => {
     return c.json({ error: 'Not enough ammo in bag' }, 422)
   }
   const bag = await ammoRepository.getBagContents(id)
-  const gunLoaded = gunLoadedToArr(await ammoRepository.getGunLoaded(id))
+  const gunLoaded = await gunLoadedWithTimestamps(id)
   return c.json({ bag, gunLoaded })
 })
 
@@ -469,7 +474,7 @@ ammo.post('/range-days/:id/shoot', async (c) => {
     return c.json({ error: 'Not enough loaded ammo for this weapon/ammo' }, 422)
   }
   const bag = await ammoRepository.getBagContents(id)
-  const gunLoaded = gunLoadedToArr(await ammoRepository.getGunLoaded(id))
+  const gunLoaded = await gunLoadedWithTimestamps(id)
   return c.json({ string: str, bag, gunLoaded })
 })
 
@@ -491,7 +496,7 @@ ammo.post('/range-days/:id/return', async (c) => {
     return c.json({ error: 'Not enough loaded ammo to return' }, 422)
   }
   const bag = await ammoRepository.getBagContents(id)
-  const gunLoaded = gunLoadedToArr(await ammoRepository.getGunLoaded(id))
+  const gunLoaded = await gunLoadedWithTimestamps(id)
   return c.json({ bag, gunLoaded })
 })
 
@@ -509,7 +514,7 @@ ammo.delete('/range-days/:id/strings/:stringId', async (c) => {
     return c.json({ error: 'String not found' }, 404)
   }
   const bag = await ammoRepository.getBagContents(id)
-  const gunLoaded = gunLoadedToArr(await ammoRepository.getGunLoaded(id))
+  const gunLoaded = await gunLoadedWithTimestamps(id)
   const strings = await ammoRepository.listRangeDayStrings(id)
   return c.json({ bag, gunLoaded, strings })
 })

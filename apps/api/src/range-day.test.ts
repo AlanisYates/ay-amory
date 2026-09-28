@@ -235,6 +235,20 @@ vi.mock('./ammo-repository', async (importOriginal) => {
       return sumGunLoaded(rows)
     }),
 
+    getLastLoadAt: vi.fn(async (sessionId: number) => {
+      const map = new Map<string, string>()
+      for (const t of _transactions) {
+        if (t.rangeDaySessionId !== sessionId || t.type !== 'range_day_load') continue
+        for (const e of _entries) {
+          if (e.transactionId !== t.id || e.location !== 'gun' || e.isBalancing || e.weaponId == null) continue
+          if (e.quantity <= 0) continue
+          const key = `${e.weaponId}:${e.ammoTypeId}`
+          const at = new Date(t.occurredAt).toISOString()
+          if (!map.has(key) || at > map.get(key)!) map.set(key, at)
+        }
+      }
+      return map
+    }),
     createLoad: vi.fn(async (data: { userId: number; sessionId: number; weaponId: number; ammoTypeId: number; rounds: number }) => {
       const sessionTxIds = _transactions.filter(t => t.rangeDaySessionId === data.sessionId).map(t => t.id)
       let inBag = 0
@@ -854,8 +868,30 @@ describe('Live Shooting (Load / Shoot / Return)', () => {
     expect(shootEntries.find(e => e.location === 'equity' && e.isBalancing)?.quantity).toBe(25)
   })
 
-  it('rejects shooting more than is loaded in the gun', async () => {
+  it('exposes loadedAt on gunLoaded after a load (refresh-safe load time)', async () => {
     const headers = await authHeader()
+    const typeId = await createType(headers)
+    const session = await startSessionWith(headers, typeId, 100)
+    const loadRes = await app.request(`/ammo/range-days/${session.id}/load`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ weaponId: 1, ammoTypeId: typeId, rounds: 30 }),
+    })
+    expect(loadRes.status).toBe(200)
+    const loadData = await loadRes.json()
+    const gl = loadData.gunLoaded.find((g: { weaponId: number; ammoTypeId: number }) => g.weaponId === 1 && g.ammoTypeId === typeId)
+    expect(gl.rounds).toBe(30)
+    expect(typeof gl.loadedAt).toBe('string')
+
+    // Survives a fresh fetch (page refresh / phone restart)
+    const detailRes = await app.request(`/ammo/range-days/${session.id}`, { headers })
+    expect(detailRes.status).toBe(200)
+    const detail = await detailRes.json()
+    const gl2 = detail.gunLoaded.find((g: { weaponId: number; ammoTypeId: number }) => g.weaponId === 1 && g.ammoTypeId === typeId)
+    expect(gl2.rounds).toBe(30)
+    expect(gl2.loadedAt).toBe(gl.loadedAt)
+  })
+
+  it('rejects shooting more than is loaded in the gun', async () => {    const headers = await authHeader()
     const typeId = await createType(headers)
     const session = await startSessionWith(headers, typeId, 100)
     await app.request(`/ammo/range-days/${session.id}/load`, {
