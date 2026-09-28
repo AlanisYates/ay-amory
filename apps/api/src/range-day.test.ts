@@ -21,7 +21,8 @@ type EntryRow = {
 }
 type SessionRow = {
   id: number; userId: number; note: string | null
-  startedAt: Date; endedAt: Date | null
+  startedAt: Date | null; endedAt: Date | null
+  status: string; stagedBag: { ammoTypeId: number; quantity: number }[] | null
 }
 type RangeDayWeaponRow = { sessionId: number; weaponId: number }
 type RangeDayStringRow = {
@@ -134,13 +135,15 @@ vi.mock('./ammo-repository', async (importOriginal) => {
       })
     }),
 
-    createRangeDaySession: vi.fn(async (data: { userId: number; note?: string | null }) => {
+    createRangeDaySession: vi.fn(async (data: { userId: number; note?: string | null; staged?: boolean; stagedBag?: { ammoTypeId: number; quantity: number }[] }) => {
       const session: SessionRow = {
         id: _sessions.length + 1,
         userId: data.userId,
         note: data.note ?? null,
-        startedAt: new Date(),
+        startedAt: data.staged ? null : new Date(),
         endedAt: null,
+        status: data.staged ? 'staged' : 'active',
+        stagedBag: data.staged ? (data.stagedBag ?? []) : null,
       }
       _sessions.push(session)
       return session
@@ -156,9 +159,41 @@ vi.mock('./ammo-repository', async (importOriginal) => {
 
     endRangeDaySession: vi.fn(async (id: number) => {
       const idx = _sessions.findIndex(s => s.id === id)
-      if (idx !== -1) _sessions[idx] = { ..._sessions[idx], endedAt: new Date() }
+      if (idx !== -1) _sessions[idx] = { ..._sessions[idx], endedAt: new Date(), status: 'ended' }
       return _sessions[idx]
     }),
+
+    startStagedSession: vi.fn(async (id: number) => {
+      const idx = _sessions.findIndex(s => s.id === id)
+      if (idx !== -1) _sessions[idx] = { ..._sessions[idx], startedAt: new Date(), status: 'active', stagedBag: null }
+      return _sessions[idx]
+    }),
+
+    updateStagedSession: vi.fn(async (id: number, data: { note?: string | null; weapons?: number[]; ammo?: { ammoTypeId: number; quantity: number }[] }) => {
+      const idx = _sessions.findIndex(s => s.id === id)
+      if (idx === -1) return null
+      if (data.weapons !== undefined) {
+        for (let i = _rangeDayWeapons.length - 1; i >= 0; i--) {
+          if (_rangeDayWeapons[i].sessionId === id) _rangeDayWeapons.splice(i, 1)
+        }
+        for (const wId of data.weapons) _rangeDayWeapons.push({ sessionId: id, weaponId: wId })
+      }
+      _sessions[idx] = {
+        ..._sessions[idx],
+        ...(data.note !== undefined ? { note: data.note } : {}),
+        ...(data.ammo !== undefined ? { stagedBag: data.ammo } : {}),
+      }
+      return _sessions[idx]
+    }),
+
+    deleteStagedSession: vi.fn(async (id: number) => {
+      for (let i = _rangeDayWeapons.length - 1; i >= 0; i--) {
+        if (_rangeDayWeapons[i].sessionId === id) _rangeDayWeapons.splice(i, 1)
+      }
+      const idx = _sessions.findIndex(s => s.id === id)
+      if (idx !== -1) _sessions.splice(idx, 1)
+    }),
+
 
     getBagContents: vi.fn(async (sessionId: number) => {
       const sessionTxIds = _transactions
@@ -620,6 +655,121 @@ describe('Range Day Sessions', () => {
     expect(data.error).toMatch(/cannot return more/i)
   })
 })
+
+describe('Staged Range Days', () => {
+  beforeEach(() => {
+    _ammoTypes.length = 0
+    _transactions.length = 0
+    _entries.length = 0
+    _sessions.length = 0
+    _rangeDayWeapons.length = 0
+    _rangeDayStrings.length = 0
+    vi.clearAllMocks()
+  })
+
+  it('packs a staged session without moving stock or starting the clock', async () => {
+    const headers = await authHeader()
+    const typeId = await createType(headers)
+
+    const res = await app.request('/ammo/range-days', {
+      method: 'POST', headers,
+      body: JSON.stringify({ ammo: [{ ammoTypeId: typeId, quantity: 150 }], staged: true }),
+    })
+    expect(res.status).toBe(201)
+    const data = await res.json()
+    expect(data.startedAt).toBeNull()
+    expect(data.status).toBe('staged')
+
+    // No ledger movement at pack time
+    expect(_entries.filter(e => !e.isBalancing && e.transactionId !== 0)).toHaveLength(0)
+    // Pack list persisted
+    const row = _sessions.find(s => s.id === data.id)!
+    expect(row.stagedBag).toEqual([{ ammoTypeId: typeId, quantity: 150 }])
+  })
+
+  it('starts a staged session: clock starts and stock moves once', async () => {
+    const headers = await authHeader()
+    const typeId = await createType(headers)
+    const packRes = await app.request('/ammo/range-days', {
+      method: 'POST', headers,
+      body: JSON.stringify({ ammo: [{ ammoTypeId: typeId, quantity: 150 }], staged: true }),
+    })
+    const packed = await packRes.json()
+
+    const res = await app.request(`/ammo/range-days/${packed.id}/start`, { method: 'POST', headers })
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.startedAt).not.toBeNull()
+    expect(data.status).toBe('active')
+
+    const moved = _entries.filter(e => !e.isBalancing && e.transactionId !== 0)
+    expect(moved.find(e => e.location === 'storage' && e.quantity === -150)).toBeDefined()
+    expect(moved.find(e => e.location === 'bag' && e.quantity === 150)).toBeDefined()
+  })
+
+  it('refuses to start while another session is active, or twice', async () => {
+    const headers = await authHeader()
+    const typeId = await createType(headers)
+    const live = await (await app.request('/ammo/range-days', {
+      method: 'POST', headers, body: JSON.stringify({ ammo: [{ ammoTypeId: typeId, quantity: 100 }] }),
+    })).json()
+    const packRes = await app.request('/ammo/range-days', {
+      method: 'POST', headers, body: JSON.stringify({ ammo: [{ ammoTypeId: typeId, quantity: 50 }], staged: true }),
+    })
+    const packed = await packRes.json()
+
+    const blocked = await app.request(`/ammo/range-days/${packed.id}/start`, { method: 'POST', headers })
+    expect(blocked.status).toBe(409)
+
+    const twice = await app.request(`/ammo/range-days/${live.id}/start`, { method: 'POST', headers })
+    expect(twice.status).toBe(409)
+  })
+
+  it('edits and deletes a staged pack, rejects both once started', async () => {
+    const headers = await authHeader()
+    const typeId = await createType(headers)
+    const packRes = await app.request('/ammo/range-days', {
+      method: 'POST', headers, body: JSON.stringify({ ammo: [{ ammoTypeId: typeId, quantity: 150 }], staged: true }),
+    })
+    const packed = await packRes.json()
+
+    const editRes = await app.request(`/ammo/range-days/${packed.id}`, {
+      method: 'PATCH', headers, body: JSON.stringify({ note: 'Burro', ammo: [{ ammoTypeId: typeId, quantity: 200 }] }),
+    })
+    expect(editRes.status).toBe(200)
+    expect(_sessions.find(s => s.id === packed.id)!.stagedBag).toEqual([{ ammoTypeId: typeId, quantity: 200 }])
+
+    await app.request(`/ammo/range-days/${packed.id}/start`, { method: 'POST', headers })
+
+    const editLive = await app.request(`/ammo/range-days/${packed.id}`, {
+      method: 'PATCH', headers, body: JSON.stringify({ note: 'x' }),
+    })
+    expect(editLive.status).toBe(409)
+    const delLive = await app.request(`/ammo/range-days/${packed.id}`, { method: 'DELETE', headers })
+    expect(delLive.status).toBe(409)
+
+    const pack2 = await (await app.request('/ammo/range-days', {
+      method: 'POST', headers, body: JSON.stringify({ ammo: [{ ammoTypeId: typeId, quantity: 10 }], staged: true }),
+    })).json()
+    const delRes = await app.request(`/ammo/range-days/${pack2.id}`, { method: 'DELETE', headers })
+    expect(delRes.status).toBe(204)
+    expect(_sessions.find(s => s.id === pack2.id)).toBeUndefined()
+  })
+
+  it('rejects live-only actions on staged packs', async () => {
+    const headers = await authHeader()
+    const typeId = await createType(headers)
+    const packed = await (await app.request('/ammo/range-days', {
+      method: 'POST', headers, body: JSON.stringify({ ammo: [{ ammoTypeId: typeId, quantity: 150 }], staged: true }),
+    })).json()
+
+    const shoot = await app.request(`/ammo/range-days/${packed.id}/shoot`, {
+      method: 'POST', headers, body: JSON.stringify({ weaponId: 1, ammoTypeId: typeId, rounds: 10 }),
+    })
+    expect(shoot.status).toBe(409)
+  })
+})
+
 
 describe('Live Shooting (Load / Shoot / Return)', () => {
   beforeEach(() => {

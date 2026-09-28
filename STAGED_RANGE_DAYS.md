@@ -16,8 +16,8 @@ only on **Start range day**.
       performs storage→bag move. 404 if not staged, 409 if another active.
 - [ ] `PATCH /ammo/range-days/:id` (note/ammo/weapons) staged-only, else 409.
 - [ ] `DELETE /ammo/range-days/:id` staged-only, else 409.
-- [ ] Active-session lookup = `status='active'` (NOT `endedAt IS NULL`).
-- [ ] History/stats/totals exclude staged. List ordering null-startedAt last.
+- [x] Active-session lookup = `status='active'` (NOT `endedAt IS NULL`).
+- [x] History/stats/totals exclude staged. List ordering null-startedAt last.
 
 ## Frontend (this repo)
 - [x] Schema (`packages/db/src/schema.ts`) + TS type (`RangeDaySession`)

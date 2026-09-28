@@ -186,7 +186,7 @@ ammo.get('/inventory', async (c) => {
 ammo.post('/range-days', async (c) => {
   const userId = getUserId(c)
   const body = await c.req.json()
-  const { ammo: ammoItems, note } = body
+  const { ammo: ammoItems, note, staged } = body
 
   if (!Array.isArray(ammoItems) || ammoItems.length === 0) {
     return c.json({ error: 'ammo is required and must be a non-empty array' }, 400)
@@ -214,11 +214,21 @@ ammo.post('/range-days', async (c) => {
     }
   }
 
+  const weapons = Array.isArray(body.weapons) ? body.weapons.map((w: number) => Number(w)) : []
+
+  // Staged pack: record guns + pack list, move nothing until Start.
+  if (staged) {
+    const pack = [...totalsByType.entries()].map(([ammoTypeId, quantity]) => ({ ammoTypeId, quantity }))
+    const session = await ammoRepository.createRangeDaySession({ userId, note, staged: true, stagedBag: pack })
+    await ammoRepository.createRangeDayWeapons(session.id, weapons)
+    const broughtWeapons = await ammoRepository.listRangeDayWeapons(session.id)
+    return c.json({ ...session, bag: [], weapons: broughtWeapons, transactions: [] }, 201)
+  }
+
   // Create the session first
   const session = await ammoRepository.createRangeDaySession({ userId, note })
 
   // Record the guns brought to this session (optional)
-  const weapons = Array.isArray(body.weapons) ? body.weapons.map((w: number) => Number(w)) : []
   await ammoRepository.createRangeDayWeapons(session.id, weapons)
 
   // Build entries: for each ammo type, -qty from storage, +qty into bag
@@ -243,6 +253,93 @@ ammo.post('/range-days', async (c) => {
   return c.json({ ...session, bag, weapons: broughtWeapons, transactions: [tx] }, 201)
 })
 
+// POST /ammo/range-days/:id/start — start a staged session (clock + stock move)
+ammo.post('/range-days/:id/start', async (c) => {
+  const userId = getUserId(c)
+  const id = Number(c.req.param('id'))
+  const session = await ammoRepository.getRangeDaySession(id, userId)
+  if (!session) return c.json({ error: 'Not found' }, 404)
+  if (session.startedAt != null) return c.json({ error: 'Session already started' }, 409)
+  const sessions = await ammoRepository.listRangeDaySessions(userId)
+  if (sessions.some(s => s.startedAt != null && s.endedAt == null)) {
+    return c.json({ error: 'Another range day is already active' }, 409)
+  }
+  const pack: { ammoTypeId: number; quantity: number }[] = (session.stagedBag as any) ?? []
+  const inventory = await ammoRepository.getInventory(userId)
+  const balanceByType = new Map(inventory.map(i => [i.id, i.balance]))
+  for (const item of pack) {
+    const available = balanceByType.get(item.ammoTypeId) ?? 0
+    if (item.quantity > available) {
+      return c.json({ error: `Not enough ammo (type ${item.ammoTypeId}) in storage: have ${available}, requested ${item.quantity}` }, 422)
+    }
+  }
+  const occurredAt = new Date().toISOString()
+  const entries = pack.flatMap(item => [
+    { ammoTypeId: item.ammoTypeId, quantity: -item.quantity, location: 'storage', isBalancing: false },
+    { ammoTypeId: item.ammoTypeId, quantity: item.quantity, location: 'bag', isBalancing: false },
+  ])
+  const tx = await ammoRepository.createTransactionWithEntries({
+    userId,
+    type: 'range_day_start',
+    note: session.note,
+    occurredAt,
+    rangeDaySessionId: id,
+    entries,
+  })
+  const started = await ammoRepository.startStagedSession(id)
+  const bag = await ammoRepository.getBagContents(id)
+  const broughtWeapons = await ammoRepository.listRangeDayWeapons(id)
+  return c.json({ ...started, bag, weapons: broughtWeapons, transactions: [tx] }, 200)
+})
+
+// PATCH /ammo/range-days/:id — edit a staged pack (note/ammo/weapons)
+ammo.patch('/range-days/:id', async (c) => {
+  const userId = getUserId(c)
+  const id = Number(c.req.param('id'))
+  const session = await ammoRepository.getRangeDaySession(id, userId)
+  if (!session) return c.json({ error: 'Not found' }, 404)
+  if (session.startedAt != null) return c.json({ error: 'Only staged packs can be edited' }, 409)
+  const body = await c.req.json()
+  const patch: { note?: string | null; weapons?: number[]; ammo?: { ammoTypeId: number; quantity: number }[] } = {}
+  if (body.note !== undefined) patch.note = body.note ?? null
+  if (body.weapons !== undefined) {
+    if (!Array.isArray(body.weapons)) return c.json({ error: 'weapons must be an array' }, 400)
+    patch.weapons = body.weapons.map((w: number) => Number(w)).filter((w: number) => Number.isFinite(w))
+  }
+  if (body.ammo !== undefined) {
+    if (!Array.isArray(body.ammo)) return c.json({ error: 'ammo must be an array' }, 400)
+    const totalsByType = new Map<number, number>()
+    for (const item of body.ammo) {
+      if (!item?.ammoTypeId || !(item.quantity > 0)) {
+        return c.json({ error: 'Each ammo item requires a positive ammoTypeId and quantity' }, 400)
+      }
+      totalsByType.set(item.ammoTypeId, (totalsByType.get(item.ammoTypeId) ?? 0) + item.quantity)
+    }
+    const inventory = await ammoRepository.getInventory(userId)
+    const balanceByType = new Map(inventory.map(i => [i.id, i.balance]))
+    for (const [ammoTypeId, qty] of totalsByType) {
+      const available = balanceByType.get(ammoTypeId) ?? 0
+      if (qty > available) {
+        return c.json({ error: `Not enough ammo (type ${ammoTypeId}) in storage: have ${available}, requested ${qty}` }, 422)
+      }
+    }
+    patch.ammo = [...totalsByType.entries()].map(([ammoTypeId, quantity]) => ({ ammoTypeId, quantity }))
+  }
+  const updated = await ammoRepository.updateStagedSession(id, patch)
+  return c.json(updated)
+})
+
+// DELETE /ammo/range-days/:id — delete a staged pack (nothing moved yet)
+ammo.delete('/range-days/:id', async (c) => {
+  const userId = getUserId(c)
+  const id = Number(c.req.param('id'))
+  const session = await ammoRepository.getRangeDaySession(id, userId)
+  if (!session) return c.json({ error: 'Not found' }, 404)
+  if (session.startedAt != null) return c.json({ error: 'Only staged packs can be deleted' }, 409)
+  await ammoRepository.deleteStagedSession(id)
+  return new Response(null, { status: 204 })
+})
+
 // GET /ammo/range-days
 ammo.get('/range-days', async (c) => {
   const userId = getUserId(c)
@@ -257,7 +354,10 @@ ammo.get('/range-days/:id', async (c) => {
   const session = await ammoRepository.getRangeDaySession(id, userId)
   if (!session) return c.json({ error: 'Not found' }, 404)
 
-  const bag = await ammoRepository.getBagContents(id)
+  const entryBag = await ammoRepository.getBagContents(id)
+  const bag = session.startedAt == null
+    ? ((session.stagedBag as any) ?? []).map((a: any) => ({ ammoTypeId: a.ammoTypeId, taken: a.quantity, acquired: 0, inBag: a.quantity }))
+    : entryBag
   const weapons = await ammoRepository.listRangeDayWeapons(id)
   const strings = await ammoRepository.listRangeDayStrings(id)
   const gunLoadedMap = await ammoRepository.getGunLoaded(id)
@@ -284,6 +384,7 @@ ammo.post('/range-days/:id/acquire', async (c) => {
   const session = await ammoRepository.getRangeDaySession(id, userId)
   if (!session) return c.json({ error: 'Not found' }, 404)
   if (session.endedAt != null) return c.json({ error: 'Session already ended' }, 409)
+  if (session.startedAt == null) return c.json({ error: 'Range day has not started yet' }, 409)
 
   const body = await c.req.json()
   const { ammo: ammoItems, note, price, vendor } = body
@@ -333,6 +434,7 @@ ammo.post('/range-days/:id/load', async (c) => {
   const session = await ammoRepository.getRangeDaySession(id, userId)
   if (!session) return c.json({ error: 'Not found' }, 404)
   if (session.endedAt != null) return c.json({ error: 'Session already ended' }, 409)
+  if (session.startedAt == null) return c.json({ error: 'Range day has not started yet' }, 409)
   const body = await c.req.json()
   const { weaponId, ammoTypeId, rounds } = body
   if (!weaponId || !ammoTypeId || !rounds || rounds <= 0) {
@@ -354,6 +456,7 @@ ammo.post('/range-days/:id/shoot', async (c) => {
   const session = await ammoRepository.getRangeDaySession(id, userId)
   if (!session) return c.json({ error: 'Not found' }, 404)
   if (session.endedAt != null) return c.json({ error: 'Session already ended' }, 409)
+  if (session.startedAt == null) return c.json({ error: 'Range day has not started yet' }, 409)
   const body = await c.req.json()
   const { weaponId, ammoTypeId, rounds, note, occurredAt } = body
   if (!weaponId || !ammoTypeId || !rounds || rounds <= 0) {
@@ -376,6 +479,7 @@ ammo.post('/range-days/:id/return', async (c) => {
   const session = await ammoRepository.getRangeDaySession(id, userId)
   if (!session) return c.json({ error: 'Not found' }, 404)
   if (session.endedAt != null) return c.json({ error: 'Session already ended' }, 409)
+  if (session.startedAt == null) return c.json({ error: 'Range day has not started yet' }, 409)
   const body = await c.req.json()
   const { weaponId, ammoTypeId, rounds } = body
   if (!weaponId || !ammoTypeId || !rounds || rounds <= 0) {
@@ -398,6 +502,7 @@ ammo.delete('/range-days/:id/strings/:stringId', async (c) => {
   const session = await ammoRepository.getRangeDaySession(id, userId)
   if (!session) return c.json({ error: 'Not found' }, 404)
   if (session.endedAt != null) return c.json({ error: 'Session already ended' }, 409)
+  if (session.startedAt == null) return c.json({ error: 'Range day has not started yet' }, 409)
   try {
     await ammoRepository.deleteRangeDayString(stringId, userId)
   } catch {
@@ -416,6 +521,7 @@ ammo.post('/range-days/:id/end', async (c) => {
   const session = await ammoRepository.getRangeDaySession(id, userId)
   if (!session) return c.json({ error: 'Not found' }, 404)
   if (session.endedAt != null) return c.json({ error: 'Session already ended' }, 409)
+  if (session.startedAt == null) return c.json({ error: 'Range day has not started yet' }, 409)
 
   const body = await c.req.json()
   const { returnAmmo: providedReturn } = body

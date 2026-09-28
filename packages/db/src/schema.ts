@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, boolean } from 'drizzle-orm/pg-core'
+import { pgTable, text, serial, timestamp, integer, boolean, json } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -31,6 +31,8 @@ export const rangeDaySessions = pgTable('range_day_sessions', {
   // Null until the range day is actually started (see POST .../start).
   startedAt: timestamp('started_at'),
   endedAt: timestamp('ended_at'),
+  // Ammo pack list while staged (cleared on start; live bag comes from entries).
+  stagedBag: json('staged_bag').$type<{ ammoTypeId: number; quantity: number }[]>(),
 })
 
 export const ammoTransactions = pgTable('ammo_transactions', {
