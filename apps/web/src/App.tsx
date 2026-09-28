@@ -5027,6 +5027,19 @@ function App() {
     setPage('range-day')
   }
 
+  // Wizard results route by outcome: live sessions enter the live view,
+  // staged packs land back on the range-days tab.
+  const handleWizardComplete = (s: RangeDaySession) => {
+    setStageInitial(null)
+    if (s.startedAt != null) {
+      setActiveSession(s)
+      setPage('range-day')
+    } else {
+      setPage('dashboard')
+      window.location.hash = '#/range-days'
+    }
+  }
+
   const handleSessionEnd = () => {
     setActiveSession(null)
     setPage('dashboard')
@@ -5060,7 +5073,7 @@ function App() {
       <RangeDayStartWizard
         staged={stageInitial == null}
         initial={stageInitial}
-        onComplete={() => { setStageInitial(null); setPage('dashboard'); window.location.hash = '#/range-days' }}
+        onComplete={handleWizardComplete}
         onCancel={() => { setStageInitial(null); setPage('dashboard') }}
       />
     )
@@ -5069,7 +5082,7 @@ function App() {
   if (page === 'range-day-start') {
     return (
       <RangeDayStartWizard
-        onComplete={handleRangeDayStart}
+        onComplete={handleWizardComplete}
         onCancel={() => setPage('dashboard')}
       />
     )
