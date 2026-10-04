@@ -4,6 +4,7 @@ import auth from './auth'
 import ammo from './ammo'
 import weapons from './weapons'
 import exportApp from './export'
+import { runStartupMigrations } from './migrate'
 
 const app = new Hono()
 
@@ -27,6 +28,11 @@ export default app
 if (process.env.NODE_ENV !== 'test') {
   const port = 3000
   console.log(`[DEV] API is running on port ${port}`)
+
+  // Self-heal hosts whose postgres volume predates the staged columns,
+  // and apply any new versioned migrations. Best-effort: never crash boot
+  // (db may still be starting); failures retry on the next restart.
+  runStartupMigrations().catch((err) => console.error('[migrate] startup migrations failed:', err))
 
   import('@hono/node-server').then(({ serve }) => {
     serve({ fetch: app.fetch, port })

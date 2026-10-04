@@ -31,8 +31,5 @@ dist-ssr
 .env.local
 .env.*.local
 
-# Drizzle
-packages/db/drizzle
-
 # TypeScript build info
 *.tsbuildinfo

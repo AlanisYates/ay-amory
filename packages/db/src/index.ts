@@ -6,3 +6,4 @@ const client = postgres(process.env.DATABASE_URL || 'postgres://postgres:postgre
 export const db = drizzle({ client, schema })
 
 export * from './schema'
+export { runMigrations } from './migrate'
