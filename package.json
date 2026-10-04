@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
     "db:push": "pnpm --filter @ay-armory/db run push",
+    "db:generate": "pnpm --filter @ay-armory/db run generate",
     "db:studio": "pnpm --filter @ay-armory/db run studio",
     "build": "pnpm -r run build",
     "test": "pnpm -r run test"
