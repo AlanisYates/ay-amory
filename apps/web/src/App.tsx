@@ -36,7 +36,7 @@ type RangeDayString = {
   occurredAt: string; note: string | null
 }
 
-type GunLoaded = { weaponId: number; ammoTypeId: number; rounds: number }
+type GunLoaded = { weaponId: number; ammoTypeId: number; rounds: number; loadedAt?: string | null }
 
 type RangeDaySession = {
   id: number; note: string | null; startedAt: string | null; endedAt: string | null
@@ -1131,7 +1131,7 @@ function TransactionHistory({ ammoTypes }: { ammoTypes: AmmoType[] }) {
 }
 
 function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
+  const diff = Math.max(0, Date.now() - new Date(iso).getTime())
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'just now'
   if (mins < 60) return `${mins}m ago`
@@ -1139,6 +1139,18 @@ function relativeTime(iso: string): string {
   if (hrs < 24) return `${hrs}h ${mins % 60}m ago`
   const days = Math.floor(hrs / 24)
   return `${days}d ago`
+}
+
+// Ticking clock for "Xm ago" labels. Display-only: it just re-renders, no API
+// traffic, and all math derives from server-persisted occurredAt timestamps,
+// so a refresh or phone restart self-corrects on the next fetch.
+function useNow(intervalMs = 30000): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(t)
+  }, [intervalMs])
+  return now
 }
 
 function PprCalculatorModal({ onClose }: { onClose: () => void }) {
@@ -1314,6 +1326,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   const [showPartial, setShowPartial] = useState(false)
   const [showBreakdown, setShowBreakdown] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  useNow(30000)
 
   useEffect(() => {
     if (stage === 'load') {
@@ -1425,6 +1438,24 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
   const redoAmmo = lastLoad ? typeForId(lastLoad.ammoTypeId) : null
   const redoAvail = lastLoad ? (bag.find(b => b.ammoTypeId === lastLoad.ammoTypeId)?.inBag ?? 0) : 0
   const canRedo = lastLoad ? redoAvail >= lastLoad.quantity : false
+  // ── In-progress round status: the persistent "did I shoot what I loaded?"
+  // answer. Latest load time (server-persisted `loadedAt`, survives refresh)
+  // vs the latest recorded shot for this weapon.
+  const weaponStrings = strings.filter(s => s.weaponId === weapon.id)
+  const lastShot = weaponStrings.length
+    ? weaponStrings.reduce((a, b) => (new Date(a.occurredAt) > new Date(b.occurredAt) ? a : b))
+    : null
+  const loadedAtList = loaded.map(g => g.loadedAt).filter((x): x is string => !!x)
+  const lastLoadAt = loadedAtList.length ? loadedAtList.reduce((a, b) => (a > b ? a : b)) : null
+  // Date-object comparison (never lexicographic): one non-ISO timestamp must
+  // not silently flip the ordering.
+  const lastLoadTime = lastLoadAt ? new Date(lastLoadAt).getTime() : null
+  const lastShotTime = lastShot ? new Date(lastShot.occurredAt).getTime() : null
+  // A load is "fresh" only if it is newer than the latest recorded shot.
+  // Missing load timestamp (legacy loads) never counts as fresh.
+  const loadIsFresh = remainingTotal > 0 && lastLoadTime != null && (lastShotTime == null || lastLoadTime >= lastShotTime)
+  const loadIsPending = remainingTotal > 0 && (loadIsFresh || lastLoadTime == null)
+  const lastShotAmmo = lastShot ? typeForId(lastShot.ammoTypeId) : null
 
   return (
     <>
@@ -1441,6 +1472,11 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
         </div>
         {firedTotal > 0 && (
           <p className="text-xs font-semibold text-red-600 mt-2">{firedTotal.toLocaleString()} RDS total this session</p>
+        )}
+        {lastShot && (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+            Last: {lastShot.rounds} RDS{lastShotAmmo ? ` · ${lastShotAmmo.name}` : ''} · {relativeTime(lastShot.occurredAt)}
+          </p>
         )}
         {firedTotal > 0 && (
           <button type="button" onClick={() => setShowBreakdown(v => !v)} className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 underline cursor-pointer">
@@ -1461,9 +1497,23 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
         )}
       </div>
       {toast && (
-        <div className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm font-medium text-green-700">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 13l4 4L19 7" /></svg>
+        <div role="status" className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm font-medium text-green-700 dark:bg-green-950 dark:border-green-800 dark:text-green-300">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 13l4 4L19 7" /></svg>
           <span>{toast}</span>
+        </div>
+      )}
+      {/* Persistent round status — survives distraction AND refresh (never toast-only).
+          "Nothing shot yet" is claimed ONLY when no shot is recorded at all;
+          otherwise we show both timestamps and let the user judge. */}
+      {loadIsPending ? (
+        <div role="status" className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-amber-50 border border-amber-300 px-3 py-2.5 text-sm font-semibold text-amber-800 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-200">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>
+          <span>Round in progress — {remainingTotal} loaded{lastLoadAt ? ` · ${relativeTime(lastLoadAt)}` : ''}{!lastShot ? ' · nothing shot yet' : ` · last shot ${relativeTime(lastShot.occurredAt)}`}</span>
+        </div>
+      ) : lastShot && (
+        <div role="status" className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm font-medium text-green-700 dark:bg-green-950 dark:border-green-800 dark:text-green-300">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 13l4 4L19 7" /></svg>
+          <span>Last: shot {lastShot.rounds} RDS · {relativeTime(lastShot.occurredAt)}{remainingTotal > 0 ? ` · ${remainingTotal} still loaded` : ''}</span>
         </div>
       )}
       <div className="mt-3 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 p-3">
@@ -1496,13 +1546,13 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
           ) : null
         })()}
         <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-center">
-            <p className="text-xs font-semibold tracking-wide text-blue-700 uppercase">{stage === 'load' ? 'In Bag' : 'Loaded'}</p>
-            <p className="text-2xl font-bold text-blue-700">{stage === 'load' ? inBag.toLocaleString() : loadedForAmmo.toLocaleString()}<span className="text-xs font-bold ml-1">RDS</span></p>
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-center dark:border-amber-700 dark:bg-amber-950">
+            <p className="text-xs font-semibold tracking-wide text-amber-800 dark:text-amber-200 uppercase">{stage === 'load' ? 'In Bag' : 'Loaded'}</p>
+            <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">{stage === 'load' ? inBag.toLocaleString() : loadedForAmmo.toLocaleString()}<span className="text-xs font-bold ml-1">RDS</span></p>
           </div>
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-center">
-            <p className="text-xs font-semibold tracking-wide text-red-700 uppercase">Fired</p>
-            <p className="text-2xl font-bold text-red-600">{firedForAmmo.toLocaleString()}<span className="text-xs font-bold ml-1">RDS</span></p>
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-center dark:border-red-800 dark:bg-red-950">
+            <p className="text-xs font-semibold tracking-wide text-red-700 dark:text-red-300 uppercase">Fired</p>
+            <p className="text-2xl font-bold text-red-600 dark:text-red-400">{firedForAmmo.toLocaleString()}<span className="text-xs font-bold ml-1">RDS</span></p>
           </div>
         </div>
       </div>
@@ -1539,8 +1589,10 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
               setToast(`Loaded ${lastLoad.quantity} RDS`)
               setTimeout(() => setToast(null), 2200)
             }} disabled={!canRedo}
-              className="w-full mt-2 py-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-600 rounded-xl text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2">
-              ↻ Redo last: {lastLoad.quantity} RDS {redoAmmo ? `· ${redoAmmo.name}` : ''}
+              aria-label={`Repeat last load: ${lastLoad.quantity} rounds${redoAmmo ? ` of ${redoAmmo.name}` : ''}`}
+              className="w-full mt-2 min-h-[48px] py-3 bg-amber-100 dark:bg-amber-950 border-2 border-amber-400 dark:border-amber-600 rounded-xl text-base font-semibold text-amber-900 dark:text-amber-100 hover:bg-amber-200 dark:hover:bg-amber-900 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M17 2l4 4-4 4" /><path d="M3 11v-1a4 4 0 014-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v1a4 4 0 01-4 4H3" /></svg>
+              <span>Repeat: {lastLoad.quantity} RDS{redoAmmo ? ` · ${redoAmmo.name}` : ''}</span>
             </button>
           )}
 
@@ -1553,7 +1605,7 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
               className="flex-1 py-5 bg-red-600 text-white text-lg font-bold hover:bg-red-700 cursor-pointer disabled:opacity-40 flex items-center justify-center">
               Shoot All — {loadedForAmmo.toLocaleString()} RDS
             </button>
-            <button type="button" onClick={() => setShowPartial(v => !v)} aria-label="Options"
+            <button type="button" onClick={() => setShowPartial(v => !v)} aria-label="Partial shoot options"
               className="w-12 bg-red-700 hover:bg-red-800 text-white flex items-center justify-center border-l border-red-800 cursor-pointer shrink-0">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${showPartial ? 'rotate-180' : ''}`}><path d="M6 9l6 6 6-6" /></svg>
             </button>
@@ -1832,6 +1884,54 @@ function AddAmmoModal({ ammoTypes, caption, onSubmit, onClose, allowNew = true }
   )
 }
 
+// Full-card empty state for a gun with nothing left (0 loaded + 0 in bag for
+// its caliber). Rendered INSTEAD of the firing card — a state, not a modal —
+// so it shows once and never nags. Offers the next gun with ammo in one tap.
+function OutOfAmmoCard({ weapon, firedTotal, lastShotAt, next, onNext, onBuyMore }: {
+  weapon: Weapon
+  firedTotal: number
+  lastShotAt: string | null
+  next: { weapon: Weapon; readyRounds: number } | null
+  onNext: () => void
+  onBuyMore: () => void
+}) {
+  return (
+    <div className="rounded-xl border-2 border-red-200 dark:border-red-800 bg-white dark:bg-neutral-900 p-4 flex flex-col">
+      <div className="rounded-xl bg-red-50 dark:bg-red-950 px-6 py-5 text-center">
+        <p className="text-lg font-bold text-neutral-900 dark:text-neutral-100">{weapon.name}</p>
+        <div className="flex items-center justify-center gap-2 mt-2">
+          <span className="text-xs bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 px-2.5 py-1 rounded-full">{weapon.caliber}</span>
+          <span className="text-xs bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 px-2.5 py-1 rounded-full capitalize">{weapon.type}</span>
+        </div>
+        <p className="text-2xl font-bold text-red-600 mt-3">Out of ammo</p>
+        <p className="text-xs text-red-500 mt-1">0 loaded · 0 in bag for {weapon.caliber}</p>
+        {firedTotal > 0 && (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
+            Fired {firedTotal.toLocaleString()} RDS this session{lastShotAt ? ` · last ${relativeTime(lastShotAt)}` : ''}
+          </p>
+        )}
+      </div>
+      {next ? (
+        <button type="button" onClick={onNext}
+          className="w-full mt-4 min-h-[56px] py-4 bg-black text-white rounded-xl text-base font-semibold hover:opacity-80 cursor-pointer flex items-center justify-center gap-2">
+          <span>Next: {next.weapon.name} · {next.readyRounds} RDS ready</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+        </button>
+      ) : (
+        <>
+          <div className="mt-4 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-3 py-2.5 text-sm text-center text-neutral-600 dark:text-neutral-300">
+            All guns are out of ammo.
+          </div>
+          <button type="button" onClick={onBuyMore}
+            className="w-full mt-2 min-h-[48px] py-3 bg-black text-white rounded-xl text-base font-semibold hover:opacity-80 cursor-pointer">
+            + Buy More Ammo
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, onSessionEnd, onBack }: {
   session: RangeDaySession
   ammoTypes: AmmoType[]
@@ -1847,8 +1947,40 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
 
   const [showEndModal, setShowEndModal] = useState(false)
   const [showAcquire, setShowAcquire] = useState(false)
+  const [bagOpen, setBagOpen] = useState(false)
   const [activeWeaponId, setActiveWeaponId] = useState<number | null>(null)
-  const [lastLoadByWeapon, setLastLoadByWeapon] = useState<Record<number, { ammoTypeId: number; quantity: number }>>({})
+  // Redo-last memory, persisted per session so a refresh doesn't lose it.
+  // Validated on read; cleared on End Range Day so revisits don't offer stale repeats.
+  const lastLoadKey = `ay-armory-last-load:${initialSession.id}`
+  const [lastLoadByWeapon, setLastLoadByWeapon] = useState<Record<number, { ammoTypeId: number; quantity: number }>>(() => {
+    try {
+      const raw = localStorage.getItem(lastLoadKey)
+      if (!raw) return {}
+      const parsed: unknown = JSON.parse(raw)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+      const clean: Record<number, { ammoTypeId: number; quantity: number }> = {}
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        const id = Number(k)
+        if (!Number.isFinite(id)) continue
+        if (!v || typeof v !== 'object') continue
+        const { ammoTypeId, quantity } = v as { ammoTypeId?: unknown; quantity?: unknown }
+        if (typeof ammoTypeId !== 'number' || !Number.isFinite(ammoTypeId)) continue
+        if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) continue
+        clean[id] = { ammoTypeId, quantity }
+      }
+      return clean
+    } catch { return {} }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(lastLoadKey, JSON.stringify(lastLoadByWeapon)) } catch { /* ignore */ }
+  }, [lastLoadKey, lastLoadByWeapon])
+  // Live clock for "Xm ago" labels (display-only, see useNow).
+  useNow(30000)
+  const sessionFiredTotal = strings.reduce((s, x) => s + x.rounds, 0)
+  const sessionLastShot = strings.length
+    ? strings.reduce((a, b) => (new Date(a.occurredAt) > new Date(b.occurredAt) ? a : b))
+    : null
+  const bagTotal = bag.reduce((s, b) => s + b.inBag, 0)
 
   useEffect(() => {
     let cancelled = false
@@ -1946,6 +2078,7 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
       body: JSON.stringify({}),
     })
     if (!res.ok) { alert('Error ending session'); return }
+    try { localStorage.removeItem(lastLoadKey) } catch { /* ignore */ }
     setShowEndModal(false)
     onSessionEnd()
   }
@@ -1964,15 +2097,23 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
       )}
 
       <header className="border-b border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
-        <div className="mx-auto max-w-4xl flex items-center justify-between px-6 h-16">
-          <div className="flex items-center gap-3">
+        <div className="mx-auto max-w-4xl flex items-center justify-between px-6 min-h-16 py-2">
+          <div className="flex items-center gap-3 flex-wrap">
             <button onClick={onBack} className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer">← Back</button>
             <h1 className="text-lg font-bold tracking-tight">Range Day</h1>
             {session.note && <span className="text-neutral-500 dark:text-neutral-400 text-sm">· {session.note}</span>}
             <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-medium">Active</span>
+            <span className="text-xs px-2.5 py-1 rounded-full font-bold border border-neutral-300 dark:border-neutral-600 bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200" title="Rounds still in the bag">
+              🎒 {bagTotal.toLocaleString()} in bag
+            </span>
+            {sessionFiredTotal > 0 && (
+              <span className="text-xs px-2.5 py-1 rounded-full font-bold border border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300" title="Rounds fired this session">
+                {sessionFiredTotal.toLocaleString()} fired{sessionLastShot ? ` · last ${relativeTime(sessionLastShot.occurredAt)}` : ''}
+              </span>
+            )}
           </div>
           <button onClick={() => setShowEndModal(true)}
-            className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 cursor-pointer">
+            className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 cursor-pointer shrink-0">
             End Range Day
           </button>
         </div>
@@ -1992,6 +2133,23 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
                 return 0
               })
               const activeId = activeWeaponId ?? ordered[0]?.id ?? null
+              const ammoFor = (ww: Weapon) => {
+                const loaded = gunLoaded.filter(g => g.weaponId === ww.id).reduce((s, g) => s + g.rounds, 0)
+                const inBag = bag.filter(b => {
+                  const t = typeForId(b.ammoTypeId)
+                  return !!t && t.caliber === ww.caliber
+                }).reduce((s, b) => s + b.inBag, 0)
+                return { loaded, inBag, total: loaded + inBag }
+              }
+              // Next gun with ammo after the active one (wraps around).
+              const activeIdx = Math.max(0, ordered.findIndex(w => w.id === activeId))
+              let nextWithAmmo: { weapon: Weapon; readyRounds: number } | null = null
+              for (let i = 1; i <= ordered.length; i++) {
+                const cand = ordered[(activeIdx + i) % ordered.length]
+                if (cand.id === activeId) continue
+                const a = ammoFor(cand)
+                if (a.total > 0) { nextWithAmmo = { weapon: cand, readyRounds: a.total }; break }
+              }
               return (
                 <div className="flex flex-col gap-3">
                   {ordered.map(w => {
@@ -2003,17 +2161,32 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
                     })
                     const isOut = loadedForW === 0 && !hasBagForCaliber
                     const isLoaded = loadedForW > 0
+                    const wStrings = strings.filter(s => s.weaponId === w.id)
+                    const wFired = wStrings.reduce((s, x) => s + x.rounds, 0)
+                    const wLastShotAt = wStrings.length
+                      ? wStrings.reduce((a, b) => (new Date(a.occurredAt) > new Date(b.occurredAt) ? a : b)).occurredAt
+                      : null
                     return (
-                      <div key={w.id} onClick={() => !isActive && setActiveWeaponId(w.id)} className={isActive ? '' : 'cursor-pointer'}>
+                      <div key={w.id} onClick={() => !isActive && setActiveWeaponId(w.id)}
+                        role={!isActive ? 'button' : undefined} tabIndex={!isActive ? 0 : undefined}
+                        aria-label={!isActive ? `Switch to ${w.name}` : undefined}
+                        onKeyDown={!isActive ? (e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveWeaponId(w.id) } }) : undefined}
+                        className={isActive ? '' : 'cursor-pointer'}>
                         {isActive ? (
-                          <WeaponRangeCard weapon={w} bag={bag} ammoTypes={ammoTypes} gunLoaded={gunLoaded} strings={strings} onAction={doAction} typeForId={typeForId} lastLoad={lastLoadByWeapon[w.id] ?? null} onSetLastLoad={v => setLastLoadByWeapon(m => { const n = { ...m }; if (v) n[w.id] = v; else delete n[w.id]; return n })} />
+                          isOut ? (
+                            <OutOfAmmoCard weapon={w} firedTotal={wFired} lastShotAt={wLastShotAt}
+                              next={nextWithAmmo} onNext={() => nextWithAmmo && setActiveWeaponId(nextWithAmmo.weapon.id)}
+                              onBuyMore={() => setShowAcquire(true)} />
+                          ) : (
+                            <WeaponRangeCard weapon={w} bag={bag} ammoTypes={ammoTypes} gunLoaded={gunLoaded} strings={strings} onAction={doAction} typeForId={typeForId} lastLoad={lastLoadByWeapon[w.id] ?? null} onSetLastLoad={v => setLastLoadByWeapon(m => { const n = { ...m }; if (v) n[w.id] = v; else delete n[w.id]; return n })} />
+                          )
                         ) : (
-                          <div className={`rounded-xl border p-3 flex items-center justify-between ${isOut ? 'border-red-200 bg-red-50 opacity-100' : isLoaded ? 'border-blue-200 bg-blue-50 opacity-100' : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 opacity-60 hover:opacity-100'}`}>
+                          <div className={`rounded-xl border p-3 flex items-center justify-between ${isOut ? 'border-red-200 bg-red-50 opacity-100 dark:border-red-800 dark:bg-red-950' : isLoaded ? 'border-amber-300 bg-amber-50 opacity-100 dark:border-amber-700 dark:bg-amber-950' : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 opacity-60 hover:opacity-100'}`}>
                             <div>
-                              <p className={`text-sm font-semibold ${isOut ? 'text-red-700' : isLoaded ? 'text-blue-700' : 'text-neutral-900 dark:text-neutral-100'}`}>{w.name}</p>
-                              <p className={`text-xs ${isOut ? 'text-red-500' : isLoaded ? 'text-blue-600' : 'text-neutral-500 dark:text-neutral-400'}`}>{w.caliber} · {w.type}{isOut ? ' · Out of ammo' : isLoaded ? ' · Loaded' : ''}</p>
+                              <p className={`text-sm font-semibold ${isOut ? 'text-red-700 dark:text-red-300' : isLoaded ? 'text-amber-800 dark:text-amber-200' : 'text-neutral-900 dark:text-neutral-100'}`}>{w.name}</p>
+                              <p className={`text-xs ${isOut ? 'text-red-500 dark:text-red-400' : isLoaded ? 'text-amber-700 dark:text-amber-300' : 'text-neutral-500 dark:text-neutral-400'}`}>{w.caliber} · {w.type}{isOut ? ' · Out of ammo' : isLoaded ? ' · Loaded' : ''}</p>
                             </div>
-                            <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${isOut ? 'bg-red-100 text-red-700 border-red-200' : isLoaded ? 'bg-blue-600 text-white border-blue-600' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700'}`}>{isOut ? 'Out' : `${loadedForW} RDS`}</span>
+                            <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${isOut ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900 dark:text-red-200 dark:border-red-800' : isLoaded ? 'bg-amber-500 text-white border-amber-500' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700'}`}>{isOut ? 'Out' : `${loadedForW} RDS`}</span>
                           </div>
                         )}
                       </div>
@@ -2025,49 +2198,9 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
           )}
         </section>
 
-        {/* Bag Contents */}
+        {/* Shooting strings — directly under the firing view; shows the last round first */}
         <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">Bag Contents</h2>
-            <button onClick={() => setShowAcquire(true)}
-              className="text-sm px-3 py-1.5 bg-black text-white rounded-lg hover:opacity-80 cursor-pointer">+ Buy More Ammo</button>
-          </div>
-          {bag.length === 0 ? (
-            <p className="text-neutral-400 dark:text-neutral-500 text-sm">No ammo in bag.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-neutral-200 dark:border-neutral-700 text-left text-neutral-500 dark:text-neutral-400">
-                    <th className="px-4 py-3">Ammo Type</th>
-                    <th className="px-4 py-3">Caliber</th>
-                    <th className="px-4 py-3 text-right">Taken</th>
-                    <th className="px-4 py-3 text-right">Acquired</th>
-                    <th className="px-4 py-3 text-right font-semibold text-neutral-700 dark:text-neutral-300">In Bag</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bag.map(b => {
-                    const type = typeForId(b.ammoTypeId)
-                    return (
-                      <tr key={b.ammoTypeId} className="border-b border-neutral-100 dark:border-neutral-800 last:border-0">
-                        <td className="px-4 py-3 font-medium">{type?.name ?? `Type #${b.ammoTypeId}`}</td>
-                        <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{type?.caliber ?? '—'}</td>
-                        <td className="px-4 py-3 text-right text-neutral-600 dark:text-neutral-400">{b.taken}</td>
-                        <td className="px-4 py-3 text-right text-neutral-600 dark:text-neutral-400">{b.acquired}</td>
-                        <td className={`px-4 py-3 text-right font-bold ${balanceColor(b.inBag)}`}>{b.inBag}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        {/* Shooting strings */}
-        <section>
-          <h2 className="text-lg font-semibold mb-3">Shooting Log</h2>
+          <h2 className="text-lg font-semibold mb-3">Shooting Log{sessionFiredTotal > 0 ? ` — ${sessionFiredTotal.toLocaleString()} RDS this session` : ''}</h2>
           {strings.length === 0 ? (
             <p className="text-neutral-400 dark:text-neutral-500 text-sm">No shots recorded yet.</p>
           ) : (
@@ -2090,6 +2223,51 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
               ))}
             </div>
           )}
+        </section>
+
+        {/* Bag collapsed out of the firing view — full table one tap away */}
+        <section>
+          <details onToggle={e => setBagOpen((e.target as HTMLDetailsElement).open)}>
+            <summary className="flex items-center justify-between cursor-pointer">
+              <span className="text-lg font-semibold">🎒 Bag — {bagTotal.toLocaleString()} RDS</span>
+              <span className="text-sm text-neutral-500 dark:text-neutral-400 underline">{bagOpen ? 'Hide contents' : 'Show contents'}</span>
+            </summary>
+            <div className="flex items-center justify-end mt-3 mb-3">
+              <button onClick={() => setShowAcquire(true)}
+                className="text-sm px-3 py-1.5 bg-black text-white rounded-lg hover:opacity-80 cursor-pointer">+ Buy More Ammo</button>
+            </div>
+            {bag.length === 0 ? (
+              <p className="text-neutral-400 dark:text-neutral-500 text-sm">No ammo in bag.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-neutral-200 dark:border-neutral-700 text-left text-neutral-500 dark:text-neutral-400">
+                      <th className="px-4 py-3">Ammo Type</th>
+                      <th className="px-4 py-3">Caliber</th>
+                      <th className="px-4 py-3 text-right">Taken</th>
+                      <th className="px-4 py-3 text-right">Acquired</th>
+                      <th className="px-4 py-3 text-right font-semibold text-neutral-700 dark:text-neutral-300">In Bag</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bag.map(b => {
+                      const type = typeForId(b.ammoTypeId)
+                      return (
+                        <tr key={b.ammoTypeId} className="border-b border-neutral-100 dark:border-neutral-800 last:border-0">
+                          <td className="px-4 py-3 font-medium">{type?.name ?? `Type #${b.ammoTypeId}`}</td>
+                          <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{type?.caliber ?? '—'}</td>
+                          <td className="px-4 py-3 text-right text-neutral-600 dark:text-neutral-400">{b.taken}</td>
+                          <td className="px-4 py-3 text-right text-neutral-600 dark:text-neutral-400">{b.acquired}</td>
+                          <td className={`px-4 py-3 text-right font-bold ${balanceColor(b.inBag)}`}>{b.inBag}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </details>
         </section>
       </main>
     </div>

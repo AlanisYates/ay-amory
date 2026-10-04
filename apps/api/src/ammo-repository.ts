@@ -418,6 +418,36 @@ export const ammoRepository = {
     return sumGunLoaded(rows)
   },
 
+  /** Latest `range_day_load` timestamp per (weapon, ammoType) in a session.
+   * Lets the range-day UI show "Loaded 15 · 12m ago · nothing shot yet" even
+   * after a refresh (gun-loaded counts alone carry no timestamp). */
+  async getLastLoadAt(sessionId: number): Promise<Map<string, string>> {
+    const rows = await db
+      .select({
+        weaponId: ammoLedgerEntries.weaponId,
+        ammoTypeId: ammoLedgerEntries.ammoTypeId,
+        at: sql<string>`MAX(${ammoTransactions.occurredAt})`,
+      })
+      .from(ammoLedgerEntries)
+      .innerJoin(ammoTransactions, eq(ammoLedgerEntries.transactionId, ammoTransactions.id))
+      .where(
+        and(
+          eq(ammoTransactions.rangeDaySessionId, sessionId),
+          eq(ammoTransactions.type, 'range_day_load'),
+          eq(ammoLedgerEntries.location, 'gun'),
+          eq(ammoLedgerEntries.isBalancing, false),
+        ),
+      )
+      .groupBy(ammoLedgerEntries.weaponId, ammoLedgerEntries.ammoTypeId)
+
+    const map = new Map<string, string>()
+    for (const r of rows) {
+      if (r.weaponId == null || r.at == null) continue
+      map.set(`${r.weaponId}:${r.ammoTypeId}`, new Date(r.at).toISOString())
+    }
+    return map
+  },
+
   async createLoad(data: { userId: number; sessionId: number; weaponId: number; ammoTypeId: number; rounds: number }): Promise<void> {
     const bag = await this.getBagContents(data.sessionId)
     const inBag = bag.find(b => b.ammoTypeId === data.ammoTypeId)?.inBag ?? 0
