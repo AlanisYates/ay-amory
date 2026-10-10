@@ -4,6 +4,31 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 const TOKEN_KEY = 'ay-armory-token'
 const API_BASE = ''
 
+// ── Last-backup tracker ─────────────────────────────────────────────────
+// Backups are client-side downloads, so the app records the last
+// export/import in localStorage for the Home widget to show.
+const BACKUP_KEY = 'ay-armory-last-backup'
+const BACKUP_EVENT = 'ay-armory-backup'
+
+type BackupRecord = { at: string; kind: 'export' | 'import'; summary: string }
+
+function getLastBackup(): BackupRecord | null {
+  try {
+    const raw = localStorage.getItem(BACKUP_KEY)
+    if (!raw) return null
+    const d = JSON.parse(raw)
+    if (!d?.at) return null
+    return d as BackupRecord
+  } catch { return null }
+}
+
+function recordBackup(kind: 'export' | 'import', summary: string) {
+  try {
+    localStorage.setItem(BACKUP_KEY, JSON.stringify({ at: new Date().toISOString(), kind, summary }))
+  } catch { /* private mode */ }
+  window.dispatchEvent(new Event(BACKUP_EVENT))
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────
 
 type User = { id: number; email: string; firstName?: string | null }
@@ -3971,22 +3996,266 @@ function WeaponDetailView({ weaponId, onBack, onRefresh }: {
   )
 }
 
-function InventoryDashboard({ inventory, weapons, totals, cleanings, onCaliberClick, onWeaponClick, onViewAmmo, onViewWeapons }: {
-  inventory: InventoryItem[]; weapons: Weapon[]; totals: Record<number, number>; cleanings: Record<number, WeaponCleaning[]>
-  onCaliberClick: (group: CaliberGroup) => void; onWeaponClick: (weaponId: number) => void; onViewAmmo: () => void; onViewWeapons: () => void
+// ── Home widgets ────────────────────────────────────────────────────────
+// Live range-day card (tap = resume), per-pack staged cards with a blue
+// Start CTA (tap body = review), and the last completed day. Transient
+// action cards render only when they exist — no empty-state widget.
+
+function LiveRangeCard({ session, onResume }: { session: RangeDaySession; onResume: () => void }) {
+  const rounds = (session.strings ?? []).reduce((s, x) => s + x.rounds, 0)
+  const guns = (session.weapons ?? []).map(w => w.name)
+  return (
+    <button type="button" onClick={onResume}
+      className="w-full text-left rounded-2xl border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30 p-4 shadow-sm hover:shadow-md transition-all cursor-pointer">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-60" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-600" />
+          </span>
+          <p className="text-sm font-semibold text-green-800 dark:text-green-300">Range day live</p>
+        </div>
+        {session.startedAt && (
+          <p className="text-xl font-bold tabular-nums text-green-800 dark:text-green-200">
+            <TabElapsed start={session.startedAt} />
+          </p>
+        )}
+      </div>
+      {session.note && <p className="text-sm text-green-700 dark:text-green-400 mt-1 italic">“{session.note}”</p>}
+      <p className="text-xs text-green-700 dark:text-green-400 mt-1">
+        {rounds.toLocaleString()} rds fired{guns.length > 0 ? ` · ${guns.slice(0, 2).join(', ')}${guns.length > 2 ? ` +${guns.length - 2} more` : ''}` : ''}
+      </p>
+      <p className="text-xs font-semibold text-green-800 dark:text-green-300 mt-2">Resume →</p>
+    </button>
+  )
+}
+
+function StagedHomeCard({ pack, hasActive, onStarted, onReview }: {
+  pack: { id: number; note: string | null }
+  hasActive: boolean
+  onStarted: (s: RangeDaySession) => void
+  onReview: () => void
 }) {
-  const groups = useMemo<CaliberGroup[]>(() => {
+  const [detail, setDetail] = useState<any>(null)
+  const [types, setTypes] = useState<AmmoType[]>([])
+  const [starting, setStarting] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    apiFetch(`/ammo/range-days/${pack.id}`).then(r => r.ok ? r.json() : null).then(d => { if (!cancelled) setDetail(d) }).catch(() => {})
+    apiFetch('/ammo/types').then(r => r.ok ? r.json() : []).then(t => { if (!cancelled) setTypes(Array.isArray(t) ? t : []) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [pack.id])
+  const typeById = new Map(types.map(t => [t.id, t]))
+  const guns: string[] = (detail?.weapons ?? []).map((w: any) => w.name ?? `Gun #${w.id}`)
+  const ammo: { name: string; qty: number }[] = (detail?.bag ?? []).map((b: any) => ({
+    name: typeById.get(b.ammoTypeId)?.name ?? `Type #${b.ammoTypeId}`,
+    qty: b.inBag ?? b.taken ?? b.quantity ?? 0,
+  }))
+  const total = ammo.reduce((s, a) => s + a.qty, 0)
+  const start = async () => {
+    setError('')
+    setStarting(true)
+    const res = await apiFetch(`/ammo/range-days/${pack.id}/start`, { method: 'POST' })
+    setStarting(false)
+    if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.error || 'Could not start range day'); return }
+    onStarted(await res.json())
+  }
+  return (
+    <div className="rounded-2xl border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 truncate">{pack.note || 'Untitled pack'}</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">Packed at home · clock hasn&apos;t started</p>
+        </div>
+        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 shrink-0">Staged</span>
+      </div>
+      {detail == null ? (
+        <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-2">Loading pack…</p>
+      ) : (
+        <>
+          {guns.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {guns.map((g, i) => (
+                <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300">{g}</span>
+              ))}
+            </div>
+          )}
+          {ammo.length > 0 && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2 tabular-nums">{total.toLocaleString()} rds packed · {ammo.length} type{ammo.length !== 1 ? 's' : ''}</p>
+          )}
+        </>
+      )}
+      {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
+      <button onClick={start} disabled={starting || hasActive} title={hasActive ? 'End the current range day first' : undefined}
+        className="mt-3 w-full px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+        {starting ? 'Starting…' : 'Start range day'}
+      </button>
+      <button onClick={onReview} className="mt-2 w-full text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer">
+        Review pack →
+      </button>
+    </div>
+  )
+}
+
+// Combined activity card (openGym weight-card anatomy): headline stats,
+// streak, last session, 8-week bars and top calibers in one — a single
+// exit to the Range tab. Bars and streak come from the sessions list we
+// already fetch; only the last session's rounds/guns need one detail call.
+function RangeActivityCard({ pastCount, lifetimeFired, sessionDates, lastEnded, onViewRange }: {
+  pastCount: number
+  lifetimeFired: number
+  sessionDates: string[]
+  lastEnded: { id: number; note: string | null; startedAt: string | null; endedAt: string | null } | null
+  onViewRange: () => void
+}) {
+  const [lastDetail, setLastDetail] = useState<any>(null)
+  useEffect(() => {
+    if (lastEnded == null) { setLastDetail(null); return }
+    let cancelled = false
+    apiFetch(`/ammo/range-days/${lastEnded.id}`).then(r => r.ok ? r.json() : null).then(d => { if (!cancelled) setLastDetail(d) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [lastEnded])
+  const lastRounds = lastDetail ? ((lastDetail.strings ?? []) as { rounds: number }[]).reduce((s, x) => s + x.rounds, 0) : null
+  const lastGuns: string[] = lastDetail ? (lastDetail.weapons ?? []).map((w: any) => w.name ?? `Gun #${w.id}`) : []
+  const lastWhen = lastEnded?.endedAt ? new Date(lastEnded.endedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : null
+
+  // Monday-start week buckets for the last 8 weeks (oldest → newest).
+  const { buckets, starts, streak, thisWeek } = useMemo(() => {
+    const day = 86400000
+    const now = new Date(); now.setHours(0, 0, 0, 0)
+    const monday = new Date(now); monday.setDate(now.getDate() - ((now.getDay() + 6) % 7))
+    const starts = Array.from({ length: 8 }, (_, i) => monday.getTime() - (7 - i) * 7 * day)
+    const times = sessionDates.map(d => new Date(d).getTime()).filter(t => Number.isFinite(t))
+    const counts = starts.map(s => times.filter(t => t >= s && t < s + 7 * day).length)
+    let streak = 0
+    for (let i = counts.length - 1; i >= 0; i--) {
+      if (counts[i] > 0) streak++
+      else if (i === counts.length - 1) continue
+      else break
+    }
+    return { buckets: counts, starts, streak, thisWeek: counts[counts.length - 1] }
+  }, [sessionDates])
+
+  if (pastCount === 0) return null
+  const maxBar = Math.max(...buckets, 1)
+  return (
+    <div className="rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-5">
+      <p className="text-[11px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Range activity</p>
+      <p className="text-3xl font-bold tabular-nums mt-1">{pastCount} <span className="text-lg font-semibold">session{pastCount !== 1 ? 's' : ''}</span></p>
+      <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1 tabular-nums">
+        {lifetimeFired.toLocaleString()} rds fired{streak > 0 ? ` · ${streak}-wk streak` : ''} · {thisWeek} this week
+      </p>
+      {lastEnded && (
+        <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-2 truncate">
+          Last: {lastWhen ?? 'past session'}{lastRounds != null ? ` · ${lastRounds.toLocaleString()} rds` : ''}{lastGuns.length > 0 ? ` · ${lastGuns.slice(0, 2).join(', ')}${lastGuns.length > 2 ? ` +${lastGuns.length - 2} more` : ''}` : ''}{lastEnded.note ? ` · “${lastEnded.note}”` : ''}
+        </p>
+      )}
+      <div className="mt-4">
+        <div>
+          <p className="text-[11px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide mb-1.5">Sessions per week</p>
+          <div className="flex items-end gap-1.5 h-20" role="img" aria-label="Sessions per week, last 8 weeks">
+            {buckets.map((c, i) => {
+              const s = new Date(starts[i])
+              const e = new Date(starts[i] + 6 * 86400000)
+              const fmt = (d: Date) => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+              const edge = i === 0 ? 'left-0' : i === buckets.length - 1 ? 'right-0' : 'left-1/2 -translate-x-1/2'
+              return (
+                <div key={i} className="flex-1 h-full flex flex-col justify-end relative group">
+                  <span className={`pointer-events-none absolute bottom-full mb-1.5 hidden group-hover:block whitespace-nowrap rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1 text-[11px] text-neutral-600 dark:text-neutral-300 shadow-md z-10 ${edge}`}>
+                    {fmt(s)} – {fmt(e)} · <span className="font-semibold tabular-nums">{c} session{c !== 1 ? 's' : ''}</span>
+                  </span>
+                  <div className={`w-full rounded-sm ${c > 0 ? 'bg-blue-600 dark:bg-blue-500' : 'bg-neutral-200 dark:bg-neutral-700'}`}
+                    style={{ height: c > 0 ? `${Math.max(10, Math.round((c / maxBar) * 100))}%` : '4px' }} />
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex gap-1.5 mt-1" aria-hidden="true">
+            {starts.map((s, i) => {
+              const d = new Date(s)
+              const label = `${d.getMonth() + 1}/${d.getDate()}`
+              const current = i === starts.length - 1
+              return (
+                <span key={i} className={`flex-1 text-center text-[10px] tabular-nums whitespace-nowrap ${current ? 'font-semibold text-neutral-700 dark:text-neutral-300' : 'text-neutral-400 dark:text-neutral-500'}`}>
+                  {label}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+      <div className="flex justify-end mt-3">
+        <button onClick={onViewRange} className="text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 underline cursor-pointer">All sessions →</button>
+      </div>
+    </div>
+  )
+}
+
+function LastBackupWidget({ onOpen }: { onOpen: () => void }) {
+  const [record, setRecord] = useState<BackupRecord | null>(getLastBackup)
+  useEffect(() => {
+    const refresh = () => setRecord(getLastBackup())
+    window.addEventListener(BACKUP_EVENT, refresh)
+    return () => window.removeEventListener(BACKUP_EVENT, refresh)
+  }, [])
+  const stale = record ? (Date.now() - new Date(record.at).getTime()) > 30 * 86400000 : false
+  return (
+    <button type="button" onClick={onOpen}
+      className="w-full text-left rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-4 py-3 mt-3 hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer flex items-center gap-3">
+      <span className={`w-2 h-2 rounded-full shrink-0 ${record == null || stale ? 'bg-amber-500' : 'bg-green-600'}`} />
+      <span className="min-w-0">
+        <span className="block text-[11px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Last backup</span>
+        <span className="block text-sm font-semibold truncate mt-0.5">
+          {record == null
+            ? 'Never backed up'
+            : `${new Date(record.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} · ${record.kind === 'export' ? 'exported' : 'restored'}`}
+        </span>
+        <span className="block text-xs text-neutral-400 dark:text-neutral-500 mt-0.5 truncate">
+          {record == null ? 'Protect your data — back up now' : record.summary}
+        </span>
+      </span>
+      <span className="ml-auto text-neutral-300 dark:text-neutral-600 shrink-0">›</span>
+    </button>
+  )
+}
+
+function InventoryDashboard({ inventory, weapons, totals, cleanings, activeSession, stagedPacks, lastEnded, pastCount, sessionDates, onResume, onStartPack, onReviewPacks, onViewRange, onViewBackup, onCaliberClick, onWeaponClick, onViewAmmo, onViewWeapons }: {
+  inventory: InventoryItem[]; weapons: Weapon[]; totals: Record<number, number>; cleanings: Record<number, WeaponCleaning[]>
+  activeSession: RangeDaySession | null
+  stagedPacks: { id: number; note: string | null }[]
+  lastEnded: { id: number; note: string | null; startedAt: string | null; endedAt: string | null } | null
+  pastCount: number
+  sessionDates: string[]
+  onResume: () => void
+  onStartPack: (s: RangeDaySession) => void
+  onReviewPacks: () => void
+  onViewRange: () => void
+  onViewBackup: () => void
+  onCaliberClick: (group: CaliberGroup) => void
+  onWeaponClick: (weaponId: number) => void
+  onViewAmmo: () => void; onViewWeapons: () => void
+}) {
+  const totalRounds = useMemo(() => inventory.reduce((s, i) => s + i.balance, 0), [inventory])
+  const lifetimeFired = useMemo(() => Object.values(totals).reduce((s, n) => s + n, 0), [totals])
+  const topWeapon = useMemo(() => {
+    if (weapons.length === 0) return null
+    return [...weapons].sort((a, b) => (totals[b.id] ?? 0) - (totals[a.id] ?? 0))[0]
+  }, [weapons, totals])
+  const topCaliber = useMemo<CaliberGroup | null>(() => {
     const map = new Map<string, InventoryItem[]>()
     for (const item of inventory) {
       const arr = map.get(item.caliber) ?? []
       arr.push(item)
       map.set(item.caliber, arr)
     }
-    return [...map.entries()].map(([caliber, items]) => ({
-      caliber, items, totalBalance: items.reduce((sum, i) => sum + i.balance, 0),
-    }))
+    let best: CaliberGroup | null = null
+    for (const [caliber, items] of map) {
+      const g = { caliber, items, totalBalance: items.reduce((sum, i) => sum + i.balance, 0) }
+      if (!best || g.totalBalance > best.totalBalance) best = g
+    }
+    return best
   }, [inventory])
-  const totalRounds = useMemo(() => inventory.reduce((s, i) => s + i.balance, 0), [inventory])
   const cleaningDue = useMemo(() => {
     let c = 0
     for (const w of weapons) {
@@ -4006,65 +4275,78 @@ function InventoryDashboard({ inventory, weapons, totals, cleanings, onCaliberCl
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
-          <p className="text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Weapons</p>
-          <p className="text-2xl font-bold mt-1">{weapons.length}</p>
+      {activeSession && (
+        <div className="mb-4">
+          <LiveRangeCard session={activeSession} onResume={onResume} />
         </div>
-        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
-          <p className="text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Rounds in storage</p>
-          <p className="text-2xl font-bold mt-1">{totalRounds.toLocaleString()}</p>
-        </div>
-        <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
-          <p className="text-xs text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Ammo types</p>
-          <p className="text-2xl font-bold mt-1">{inventory.length}</p>
-        </div>
-        <div className={`rounded-xl border p-4 ${cleaningDue > 0 ? 'bg-red-50 border-red-200' : 'bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-700'}`}>
-          <p className={`text-xs uppercase tracking-wide ${cleaningDue > 0 ? 'text-red-600' : 'text-neutral-400 dark:text-neutral-500'}`}>Cleaning due</p>
-          <p className={`text-2xl font-bold mt-1 ${cleaningDue > 0 ? 'text-red-600' : ''}`}>{cleaningDue}</p>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Ammo Overview</h3>
-        <button onClick={onViewAmmo} className="text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 underline cursor-pointer">View all →</button>
-      </div>
-      {groups.length === 0 ? (
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-8">No ammo yet — add some in the Ammo tab.</p>
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
-          {groups.slice(0, 3).map(group => (
-            <button key={group.caliber} onClick={() => onCaliberClick(group)} className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 text-left hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
-              <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{group.caliber}</p>
-              <p className="text-xs text-neutral-400 dark:text-neutral-500">{group.items.length} type{group.items.length !== 1 ? 's' : ''}</p>
-              <p className="text-xl font-bold mt-2">{group.totalBalance.toLocaleString()}</p>
-              <p className="text-xs text-neutral-400 dark:text-neutral-500">rounds</p>
-            </button>
+      )}
+      {stagedPacks.length > 0 && (
+        <div className="flex flex-col gap-3 mb-6">
+          {stagedPacks.map(p => (
+            <StagedHomeCard key={p.id} pack={p} hasActive={activeSession != null} onStarted={onStartPack} onReview={onReviewPacks} />
           ))}
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Weapons Preview</h3>
-        <button onClick={onViewWeapons} className="text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 underline cursor-pointer">View all →</button>
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        <button type="button" onClick={onViewAmmo}
+          className="text-left rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-3 hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
+          <p className="text-[11px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Rounds</p>
+          <p className="text-2xl font-bold tabular-nums mt-0.5">{totalRounds >= 1000 ? `${(totalRounds / 1000).toFixed(1).replace(/\.0$/, '')}k` : `${totalRounds}`}</p>
+        </button>
+        <button type="button" onClick={onViewWeapons}
+          className="text-left rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-3 hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
+          <p className="text-[11px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">Guns</p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-2xl font-bold tabular-nums">{weapons.length}</p>
+            {cleaningDue > 0 && (
+              <>
+                <span className="w-px h-6 bg-neutral-200 dark:bg-neutral-700 shrink-0" aria-hidden="true" />
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900 rounded-lg px-2 py-1">
+                  <TabIcon name="alert" size={14} /> {cleaningDue} to clean
+                </span>
+              </>
+            )}
+          </div>
+        </button>
       </div>
-      {weapons.length === 0 ? (
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">No weapons yet — add one in the Weapons tab.</p>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {weapons.slice(0, 3).map(w => {
-            const total = totals[w.id] ?? 0
-            return (
-              <button key={w.id} onClick={() => onWeaponClick(w.id)} className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 text-left hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer">
-                <p className="text-sm font-semibold truncate">{w.name}</p>
-                <p className="text-xs text-neutral-400 dark:text-neutral-500 capitalize">{w.type} · {w.caliber}</p>
-                <p className="text-lg font-bold mt-2">{total.toLocaleString()} rds</p>
-                <p className="text-xs text-neutral-400 dark:text-neutral-500">fired · tap for details</p>
-              </button>
-            )
-          })}
+
+      <RangeActivityCard
+        pastCount={pastCount}
+        lifetimeFired={lifetimeFired}
+        sessionDates={sessionDates}
+        lastEnded={lastEnded}
+        onViewRange={onViewRange}
+      />
+
+      {(topWeapon || topCaliber) && (
+        <div className="grid grid-cols-2 gap-2 mt-3">
+          {topWeapon && (
+            <button type="button" onClick={() => onWeaponClick(topWeapon.id)}
+              className="text-left rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-3 hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer min-w-0">
+              <div className="flex items-center gap-1.5">
+                <p className="text-[11px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide truncate">Top weapon</p>
+                <span className="ml-auto text-neutral-300 dark:text-neutral-600 shrink-0">›</span>
+              </div>
+              <p className="text-base font-bold truncate mt-0.5">{topWeapon.name}</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5 tabular-nums">{(totals[topWeapon.id] ?? 0).toLocaleString()} rds fired</p>
+            </button>
+          )}
+          {topCaliber && (
+            <button type="button" onClick={() => onCaliberClick(topCaliber)}
+              className="text-left rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-3 hover:border-neutral-400 hover:shadow-sm transition-all cursor-pointer min-w-0">
+              <div className="flex items-center gap-1.5">
+                <p className="text-[11px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide truncate">Top caliber</p>
+                <span className="ml-auto text-neutral-300 dark:text-neutral-600 shrink-0">›</span>
+              </div>
+              <p className="text-base font-bold truncate mt-0.5">{topCaliber.caliber}</p>
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5 tabular-nums">{topCaliber.totalBalance.toLocaleString()} rds stored</p>
+            </button>
+          )}
         </div>
       )}
+
+      <LastBackupWidget onOpen={onViewBackup} />
     </div>
   )
 }
@@ -4418,6 +4700,7 @@ function ExportImportTab({ onImported }: { onImported?: () => void }) {
     a.remove()
     URL.revokeObjectURL(url)
     setStatus(`Exported ${data.weapons?.length ?? 0} weapons, ${data.ammoTypes?.length ?? 0} ammo types, ${data.weaponCleanings?.length ?? 0} cleanings, ${data.ammoTransactions?.length ?? 0} transactions`)
+    recordBackup('export', `${data.weapons?.length ?? 0} guns · ${data.ammoTypes?.length ?? 0} types · ${data.ammoTransactions?.length ?? 0} transactions`)
   }
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -4449,6 +4732,7 @@ function ExportImportTab({ onImported }: { onImported?: () => void }) {
     setStatus(`Imported — weapons: ${d.imported?.weapons ?? 0}, ammoTypes: ${d.imported?.ammoTypes ?? 0}, cleanings: ${d.imported?.weaponCleanings ?? 0}, sessions: ${d.imported?.rangeDaySessions ?? 0}, txs: ${d.imported?.transactions ?? 0} (${mode})`)
     setPreview(null)
     if (fileRef.current) fileRef.current.value = ''
+    recordBackup('import', `restored ${d.imported?.weapons ?? 0} guns · ${d.imported?.ammoTypes ?? 0} types (${mode})`)
     onImported?.()
   }
 
@@ -4588,6 +4872,86 @@ function StagedStartModal({ packs, onClose, onStart }: { packs: { id: number; no
 }
 
 
+// ── Bottom TabBar (openGym-style) ─────────────────────────────────────────
+// Fixed bottom nav: Home | Range | (O) Start | Ammo | Guns.
+// Sub-pages keep their parent lit (backup → home), like openGym's
+// settings → home mapping. The live RangeDayView is full-screen so the
+// bar never needs a body.no-tabbar mode.
+
+function TabElapsed({ start }: { start: string }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => tick(t => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const ms = Math.max(0, Date.now() - new Date(start).getTime())
+  const m = Math.floor(ms / 60000)
+  const h = Math.floor(m / 60)
+  const mm = h > 0 ? String(m % 60).padStart(2, '0') : String(m)
+  const hh = h > 0 ? `${h}:` : ''
+  return <span className="tab-time">{hh}{mm}</span>
+}
+
+// Hand-drawn stroke icons on a 24×24 grid (openGym convention):
+// strokes only, round caps/joins, width from --icon-stroke, live area 3…21.
+function TabIcon({ name, size = 25 }: { name: 'home' | 'range' | 'play' | 'ammo' | 'guns' | 'gear' | 'alert'; size?: number }) {
+  const paths: Record<string, React.ReactNode> = {
+    home: <path d="M3.5 10.7 12 3.8l8.5 6.9M5.9 9.4V19a1.4 1.4 0 0 0 1.4 1.4h9.4A1.4 1.4 0 0 0 18.1 19V9.4" />,
+    range: <><circle cx="12" cy="12" r="8.2" /><circle cx="12" cy="12" r="4.6" /><circle cx="12" cy="12" r="1.1" /></>,
+    play: <path d="M8.4 5.6 18 12l-9.6 6.4Z" />,
+    ammo: <><path d="M3.5 7.5 12 3.5l8.5 4v9l-8.5 4-8.5-4Z" /><path d="M3.5 7.5 12 11.5l8.5-4M12 11.5v9" /></>,
+    guns: <><path d="M2.5 8.5h15v3.5h-15Z" /><path d="M5.5 8.5V6.8M14.5 8.5V6.8" /><path d="M13 12l-1.5 8h4L17.5 12" /><path d="M8.5 12v1.8c0 1.6 1.1 2.7 2.7 2.7H13" /></>,
+    alert: <><path d="M12 3.5 21 20H3Z" /><path d="M12 9.5v4.5" /><circle cx="12" cy="16.8" r="0.7" fill="currentColor" stroke="none" /></>,
+    gear: <><path d="M20.48 10.59 20.48 13.41 18.58 13.72 17.87 15.43 19 17 17 19 15.43 17.87 13.72 18.58 13.41 20.48 10.59 20.48 10.28 18.58 8.57 17.87 7 19 5 17 6.13 15.43 5.42 13.72 3.52 13.41 3.52 10.59 5.42 10.28 6.13 8.57 5 7 7 5 8.57 6.13 10.28 5.42 10.59 3.52 13.41 3.52 13.72 5.42 15.43 6.13 17 5 19 7 17.87 8.57 18.58 10.28Z" /><circle cx="12" cy="12" r="3.1" /></>,
+  }
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor"
+      strokeWidth="var(--icon-stroke, 1.65)" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {paths[name]}
+    </svg>
+  )
+}
+
+function TabButton({ active, icon, label, dot, onClick }: {
+  active: boolean; icon: 'home' | 'range' | 'ammo' | 'guns'; label: string; dot?: boolean; onClick: () => void
+}) {
+  return (
+    <button type="button" onClick={onClick} className={active ? 'on' : ''} aria-current={active ? 'page' : undefined}>
+      <span className="tab-ic"><span className="icn" aria-hidden="true"><TabIcon name={icon} /></span>{dot && <span className="tab-dot" aria-hidden="true" />}</span>
+      <span>{label}</span>
+    </button>
+  )
+}
+
+function BottomTabBar({ tab, activeSession, stagedCount, cleaningDue, onGo, onStart, onResume }: {
+  tab: TabKey
+  activeSession: RangeDaySession | null
+  stagedCount: number
+  cleaningDue: number
+  onGo: (tab: TabKey) => void
+  onStart: () => void
+  onResume: () => void
+}) {
+  // Backup lives under Home — keep Home lit there.
+  const on = (k: TabKey) => tab === k || (tab === 'backup' && k === 'home')
+  const running = !!activeSession?.startedAt
+  return (
+    <nav id="tabbar" aria-label="Primary">
+      <TabButton active={on('home')} icon="home" label="Home" onClick={() => onGo('home')} />
+      <TabButton active={on('range')} icon="range" label="Range" dot={stagedCount > 0} onClick={() => onGo('range')} />
+      <button type="button" className={'start' + (activeSession ? ' rec' : '')} onClick={running ? onResume : onStart} aria-label={running ? 'Resume range day' : 'Start range day'}>
+        <span className="cir"><span className="icn" aria-hidden="true"><TabIcon name="play" /></span></span>
+        {running && activeSession?.startedAt
+          ? <TabElapsed start={activeSession.startedAt} />
+          : <span>{activeSession ? 'Resume' : 'Start'}</span>}
+      </button>
+      <TabButton active={on('ammo')} icon="ammo" label="Ammo" onClick={() => onGo('ammo')} />
+      <TabButton active={on('guns')} icon="guns" label="Guns" dot={cleaningDue > 0} onClick={() => onGo('guns')} />
+    </nav>
+  )
+}
+
+
 function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResumeRangeDay, onStartRangeDay, onPackRangeDay, onEditStaged, theme, onToggleTheme }: {
   user: User
   onLogout: () => void
@@ -4606,12 +4970,12 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
   const [inventoryLoading, setInventoryLoading] = useState(true)
   const [activeAction, setActiveAction] = useState<QuickAction>(null)
   const [showPpr, setShowPpr] = useState(false)
-  const [tab, setTab] = useState<'inventory' | 'ammo' | 'types' | 'weapons' | 'history' | 'range-days' | 'backup'>('inventory')
+  const [tab, setTab] = useState<TabKey>('home')
   const [viewingCaliberName, setViewingCaliberName] = useState<string | null>(null)
   const [viewingWeaponId, setViewingWeaponId] = useState<number | null>(null)
   const [viewingAmmoId, setViewingAmmoId] = useState<number | null>(null)
   const routeRef = useRef('')
-  const go = (p: { tab?: 'inventory' | 'ammo' | 'types' | 'weapons' | 'history' | 'range-days' | 'backup'; caliber?: string | null; weaponId?: number | null; ammoId?: number | null }) => {
+  const go = (p: { tab?: TabKey; caliber?: string | null; weaponId?: number | null; ammoId?: number | null }) => {
     const next = {
       tab,
       caliber: viewingCaliberName,
@@ -4637,20 +5001,33 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
       setViewingWeaponId(r.weaponId)
       setViewingAmmoId(r.ammoId)
     }
-    apply(window.location.hash || '#/inventory')
+    apply(window.location.hash || '#/home')
     const onHash = () => apply(window.location.hash)
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
   const [txRefreshKey, setTxRefreshKey] = useState(0)
   const [stagedPacks, setStagedPacks] = useState<{ id: number; note: string | null }[]>([])
+  const [lastEnded, setLastEnded] = useState<{ id: number; note: string | null; startedAt: string | null; endedAt: string | null } | null>(null)
+  const [pastCount, setPastCount] = useState(0)
+  const [sessionDates, setSessionDates] = useState<string[]>([])
   const [showStagedStart, setShowStagedStart] = useState(false)
   useEffect(() => {
     apiFetch('/ammo/range-days')
       .then(r => r.ok ? r.json() : [])
-      .then((arr: any[]) => setStagedPacks(Array.isArray(arr) ? arr.filter((s: any) => s.startedAt == null).map((s: any) => ({ id: s.id, note: s.note ?? null })) : []))
+      .then((arr: any[]) => {
+        if (!Array.isArray(arr)) { setStagedPacks([]); setLastEnded(null); setPastCount(0); setSessionDates([]); return }
+        setStagedPacks(arr.filter((s: any) => s.startedAt == null).map((s: any) => ({ id: s.id, note: s.note ?? null })))
+        const started = arr.filter((s: any) => s.startedAt != null)
+        setPastCount(started.length)
+        setSessionDates(started.map((s: any) => s.startedAt).filter((d: unknown): d is string => typeof d === 'string'))
+        const ended = started
+          .filter((s: any) => s.endedAt != null)
+          .sort((a: any, b: any) => new Date(b.endedAt).getTime() - new Date(a.endedAt).getTime())
+        setLastEnded(ended.length > 0 ? { id: ended[0].id, note: ended[0].note ?? null, startedAt: ended[0].startedAt, endedAt: ended[0].endedAt } : null)
+      })
       .catch(() => {})
-  }, [txRefreshKey])
+  }, [txRefreshKey, activeSession])
   const [weaponTotals, setWeaponTotals] = useState<Record<number, number>>({})
   const [weaponCleanings, setWeaponCleanings] = useState<Record<number, WeaponCleaning[]>>({})
 
@@ -4780,13 +5157,36 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
     onRangeDayStart(session)
   }
 
+  const gunsDue = useMemo(() => {
+    let c = 0
+    for (const w of weapons) {
+      const total = weaponTotals[w.id] ?? 0
+      const cls = weaponCleanings[w.id] ?? []
+      const latest = cls[0] ?? null
+      const baselineRounds = latest?.roundCountAtCleaning ?? 0
+      const baselineDate = latest ? new Date(latest.cleanedAt) : new Date(w.createdAt)
+      const roundsSince = Math.max(0, total - baselineRounds)
+      const daysSince = Math.max(0, Math.floor((Date.now() - baselineDate.getTime()) / 86400000))
+      if ((w.cleaningIntervalRounds != null && w.cleaningIntervalRounds - roundsSince <= 0) || (w.cleaningIntervalDays != null && w.cleaningIntervalDays - daysSince <= 0)) c++
+    }
+    return c
+  }, [weapons, weaponTotals, weaponCleanings])
+
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
       <header className="border-b border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 sticky top-0 z-10">
         <div className="mx-auto max-w-6xl flex items-center justify-between px-6 h-16">
           <h1 className="text-xl font-bold tracking-tight">ay-armory</h1>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-neutral-500 dark:text-neutral-400">{user.email}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-neutral-500 dark:text-neutral-400 hidden sm:inline">{user.email}</span>
+            <button onClick={() => setShowPpr(true)} title="PPR calculator"
+              className="h-9 px-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-semibold text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer transition-colors">
+              PPR
+            </button>
+            <button onClick={() => go({ tab: 'backup', caliber: null, weaponId: null, ammoId: null })} title="Backup & settings"
+              className="w-9 h-9 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer transition-colors flex items-center justify-center">
+              <TabIcon name="gear" size={18} />
+            </button>
             <button onClick={onToggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               className="w-9 h-9 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer transition-colors flex items-center justify-center">
               {theme === 'dark' ? (
@@ -4803,66 +5203,18 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        <h2 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100 mb-6">
-          Welcome{user.firstName ? `, ${user.firstName}` : ''}
-        </h2>
-
-        {/* Range Day CTA */}
-        <div className="flex justify-end gap-3 mb-6">
-          <button
-            onClick={() => setShowPpr(true)}
-            className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer">
-            🧮 PPR Calc
-          </button>
-          {activeSession ? (
-            <button
-              onClick={onResumeRangeDay}
-              className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm bg-green-600 text-white hover:bg-green-700 transition-colors cursor-pointer">
-              ⇄ Resume Range Day
-            </button>
-          ) : stagedPacks.length > 0 ? (
-            <button
-              onClick={() => setShowStagedStart(true)}
-              className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm bg-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer">
-              ▷ Start staged day
-            </button>
-          ) : (
-            <button
-              onClick={onStartRangeDay}
-              className="px-6 py-3 rounded-xl text-base font-semibold shadow-sm bg-green-600 text-white hover:bg-green-700 transition-colors cursor-pointer">
-              ⇄ Start Range Day
-            </button>
-          )}
-          {showStagedStart && (
-            <StagedStartModal packs={stagedPacks} onClose={() => setShowStagedStart(false)} onStart={s => { setShowStagedStart(false); onRangeDayStart(s) }} />
-          )}
-        </div>
-
-        {stagedPacks.length > 0 && (
-          <div className="rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-4 mb-6 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{stagedPacks.length} pack{stagedPacks.length !== 1 ? 's' : ''} staged</p>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">Packed at home · clock hasn&apos;t started</p>
-            </div>
-            <button onClick={() => go({ tab: 'range-days', caliber: null, weaponId: null, ammoId: null })} className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 shrink-0">Review →</button>
-          </div>
+      <main className="mx-auto max-w-6xl px-6 pt-8 pb-32">
+        {tab === 'home' && viewingWeaponId == null && viewingCaliberName == null && (
+          <h2 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100 mb-6">
+            Welcome{user.firstName ? `, ${user.firstName}` : ''}
+          </h2>
         )}
-        {/* Tabs */}
-        <div className="flex gap-1 border-b border-neutral-200 dark:border-neutral-700 mb-6 mt-8 overflow-x-auto">
-          {(['inventory', 'ammo', 'types', 'weapons', 'history', 'range-days', 'backup'] as const).map(t => (
-            <button key={t} onClick={() => { setActiveAction(null); go({ tab: t, caliber: null, weaponId: null, ammoId: null }) }}
-              className={`px-4 py-2 text-sm font-medium capitalize cursor-pointer transition-colors whitespace-nowrap ${
-                tab === t
-                  ? 'border-b-2 border-black dark:border-white text-black dark:text-white'
-                  : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300'
-              }`}>
-              {t === 'weapons' ? 'Weapons' : t === 'types' ? 'Manage Types' : t === 'history' ? 'History' : t === 'ammo' ? 'Ammo' : t === 'range-days' ? 'Range Days' : t === 'backup' ? 'Backup' : 'Inventory'}
-            </button>
-          ))}
-        </div>
 
-        {tab === 'inventory' && (
+        {showStagedStart && (
+          <StagedStartModal packs={stagedPacks} onClose={() => setShowStagedStart(false)} onStart={s => { setShowStagedStart(false); onRangeDayStart(s) }} />
+        )}
+
+        {tab === 'home' && (
           viewingWeapon ? (
             <WeaponDetailView
               weaponId={viewingWeapon.id}
@@ -4887,10 +5239,20 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
               weapons={weapons}
               totals={weaponTotals}
               cleanings={weaponCleanings}
+              activeSession={activeSession}
+              stagedPacks={stagedPacks}
+              lastEnded={lastEnded}
+              pastCount={pastCount}
+              sessionDates={sessionDates}
+              onResume={onResumeRangeDay}
+              onStartPack={onRangeDayStart}
+              onReviewPacks={() => go({ tab: 'range', caliber: null, weaponId: null, ammoId: null })}
+              onViewRange={() => go({ tab: 'range', caliber: null, weaponId: null, ammoId: null })}
+              onViewBackup={() => go({ tab: 'backup', caliber: null, weaponId: null, ammoId: null })}
               onCaliberClick={g => go({ caliber: g.caliber })}
               onWeaponClick={id => go({ weaponId: id })}
               onViewAmmo={() => go({ tab: 'ammo', caliber: null, weaponId: null, ammoId: null })}
-              onViewWeapons={() => go({ tab: 'weapons', caliber: null, weaponId: null, ammoId: null })}
+              onViewWeapons={() => go({ tab: 'guns', caliber: null, weaponId: null, ammoId: null })}
             />
           )
         )}
@@ -5023,17 +5385,22 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
                       <NewTypeForm onSuccess={handleActionSuccess} onClose={() => setActiveAction(null)} />
                     </QuickForm>
                   )}
+                  <details className="mt-8 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
+                    <summary className="px-4 py-3 text-sm font-medium cursor-pointer list-none flex items-center justify-between">
+                      <span>Manage types · {ammoTypes.length}</span>
+                      <span className="text-neutral-400">›</span>
+                    </summary>
+                    <div className="px-4 pb-4 border-t border-neutral-100 dark:border-neutral-800 pt-4">
+                      <AmmoTypeManager ammoTypes={ammoTypes} onRefresh={loadInventory} />
+                    </div>
+                  </details>
                 </>
               )}
             </div>
           )
         )}
 
-        {tab === 'types' && (
-          <AmmoTypeManager ammoTypes={ammoTypes} onRefresh={loadInventory} />
-        )}
-
-        {tab === 'weapons' && (
+        {tab === 'guns' && (
           viewingWeapon ? (
             <WeaponDetailView
               weaponId={viewingWeapon.id}
@@ -5045,18 +5412,34 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
           )
         )}
 
-        {tab === 'history' && (
-          <TransactionHistory ammoTypes={ammoTypes} />
-        )}
-
-        {tab === 'range-days' && (
-          <RangeDaysTab onPack={onPackRangeDay} onEdit={onEditStaged} onStart={onRangeDayStart} hasActive={activeSession != null} refreshKey={txRefreshKey} onChanged={() => setTxRefreshKey(k => k + 1)} />
+        {tab === 'range' && (
+          <div className="flex flex-col gap-10">
+            <section>
+              <RangeDaysTab onPack={onPackRangeDay} onEdit={onEditStaged} onStart={onRangeDayStart} hasActive={activeSession != null} refreshKey={txRefreshKey} onChanged={() => setTxRefreshKey(k => k + 1)} />
+            </section>
+            <section>
+              <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-3">History</h3>
+              <TransactionHistory ammoTypes={ammoTypes} />
+            </section>
+          </div>
         )}
 
         {tab === 'backup' && (
-          <ExportImportTab onImported={loadInventory} />
+          <div>
+            <button onClick={() => go({ tab: 'home', caliber: null, weaponId: null, ammoId: null })} className="text-sm text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer mb-4">← Back to Home</button>
+            <ExportImportTab onImported={loadInventory} />
+          </div>
         )}
       </main>
+      <BottomTabBar
+        tab={tab}
+        activeSession={activeSession}
+        stagedCount={stagedPacks.length}
+        cleaningDue={gunsDue}
+        onGo={(t) => { setActiveAction(null); go({ tab: t, caliber: null, weaponId: null, ammoId: null }) }}
+        onStart={() => { if (stagedPacks.length > 0) setShowStagedStart(true); else onStartRangeDay() }}
+        onResume={onResumeRangeDay}
+      />
       {showPpr && <PprCalculatorModal onClose={() => setShowPpr(false)} />}
     </div>
   )
@@ -5113,11 +5496,28 @@ function AuthView({ onLogin }: { onLogin: (user: User, token: string) => void })
 
 // ── App root ──────────────────────────────────────────────────────────────
 
-const APP_TABS = ['inventory', 'ammo', 'types', 'weapons', 'history', 'range-days', 'backup'] as const
+const APP_TABS = ['home', 'range', 'ammo', 'guns', 'backup'] as const
+type TabKey = typeof APP_TABS[number]
+
+// Legacy top-tab hashes map onto the 5 bottom tabs (openGym-style:
+// sub-pages keep their parent lit, e.g. backup lights Home).
+const LEGACY_TAB_MAP: Record<string, TabKey> = {
+  inventory: 'home',
+  'range-days': 'range',
+  history: 'range',
+  ammo: 'ammo',
+  types: 'ammo',
+  weapons: 'guns',
+  home: 'home',
+  range: 'range',
+  guns: 'guns',
+  backup: 'backup',
+}
 
 function encodeRoute(r: { tab: string; caliber: string | null; weaponId: number | null; ammoId: number | null }): string {
-  let h = '#/' + r.tab
-  if (r.tab === 'weapons' && r.weaponId != null) return h + '/' + r.weaponId
+  const tab = LEGACY_TAB_MAP[r.tab] ?? 'home'
+  let h = '#/' + tab
+  if ((tab === 'guns') && r.weaponId != null) return h + '/' + r.weaponId
   if (r.caliber) h += '/' + encodeURIComponent(r.caliber)
   if (r.caliber && r.ammoId != null) h += '/' + r.ammoId
   if (r.weaponId != null) h += '/w/' + r.weaponId
@@ -5125,16 +5525,19 @@ function encodeRoute(r: { tab: string; caliber: string | null; weaponId: number 
 }
 
 function decodeRoute(hash: string): { tab: string; caliber: string | null; weaponId: number | null; ammoId: number | null } {
-  const fallback = { tab: 'inventory', caliber: null, weaponId: null, ammoId: null }
+  const fallback = { tab: 'home', caliber: null, weaponId: null, ammoId: null }
   try {
     const segs = hash.replace(/^#\/?/, '').split('/').filter(s => s.length > 0)
-    if (segs.length === 0 || !(APP_TABS as readonly string[]).includes(segs[0])) return fallback
-    const tab = segs[0]
+    if (segs.length === 0) return fallback
+    const raw = segs[0]
+    const mapped = LEGACY_TAB_MAP[raw] ?? null
+    if (!mapped) return fallback
+    const tab = mapped
     const rest = segs.slice(1)
     let caliber: string | null = null
     let weaponId: number | null = null
     let ammoId: number | null = null
-    if (tab === 'weapons') {
+    if (tab === 'guns') {
       if (rest[0] != null && /^\d+$/.test(rest[0])) weaponId = Number(rest[0])
     } else {
       let i = 0
