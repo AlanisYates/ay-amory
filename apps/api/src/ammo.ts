@@ -217,7 +217,12 @@ ammo.post('/range-days', async (c) => {
   const weapons = Array.isArray(body.weapons) ? body.weapons.map((w: number) => Number(w)) : []
 
   // Staged pack: record guns + pack list, move nothing until Start.
+  // Only one staged pack at a time — start or delete the current one first.
   if (staged) {
+    const existing = await ammoRepository.listRangeDaySessions(userId)
+    if (existing.some(s => s.startedAt == null)) {
+      return c.json({ error: 'You already have a staged pack — start or delete it first' }, 409)
+    }
     const pack = [...totalsByType.entries()].map(([ammoTypeId, quantity]) => ({ ammoTypeId, quantity }))
     const session = await ammoRepository.createRangeDaySession({ userId, note, staged: true, stagedBag: pack })
     await ammoRepository.createRangeDayWeapons(session.id, weapons)

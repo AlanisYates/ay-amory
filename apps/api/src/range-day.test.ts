@@ -701,6 +701,31 @@ describe('Staged Range Days', () => {
     expect(row.stagedBag).toEqual([{ ammoTypeId: typeId, quantity: 150 }])
   })
 
+  it('rejects a second staged pack while one is waiting', async () => {
+    const headers = await authHeader()
+    const typeId = await createType(headers)
+    const first = await app.request('/ammo/range-days', {
+      method: 'POST', headers,
+      body: JSON.stringify({ ammo: [{ ammoTypeId: typeId, quantity: 150 }], staged: true }),
+    })
+    expect(first.status).toBe(201)
+
+    const second = await app.request('/ammo/range-days', {
+      method: 'POST', headers,
+      body: JSON.stringify({ ammo: [{ ammoTypeId: typeId, quantity: 50 }], staged: true }),
+    })
+    expect(second.status).toBe(409)
+
+    // Once the first pack starts, staging is allowed again
+    const packed = await first.json()
+    await app.request(`/ammo/range-days/${packed.id}/start`, { method: 'POST', headers })
+    const retry = await app.request('/ammo/range-days', {
+      method: 'POST', headers,
+      body: JSON.stringify({ ammo: [{ ammoTypeId: typeId, quantity: 50 }], staged: true }),
+    })
+    expect(retry.status).toBe(201)
+  })
+
   it('starts a staged session: clock starts and stock moves once', async () => {
     const headers = await authHeader()
     const typeId = await createType(headers)
