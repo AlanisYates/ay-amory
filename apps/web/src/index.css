@@ -150,3 +150,21 @@
   font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
+
+/* ── Scroll reveal (pack page sections) ───────────────────────── */
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+.reveal.in {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .reveal.in {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

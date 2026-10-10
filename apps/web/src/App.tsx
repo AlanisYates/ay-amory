@@ -764,13 +764,30 @@ function PackRecapSheet({ packId, hasActive, onStarted, onClose, onEdit }: {
 }
 
 
+// Fade-in on scroll into view (pack page sections), staggered on first paint.
+function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { setShown(true); return }
+    const io = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) { setShown(true); io.disconnect() }
+    }, { threshold: 0.1 })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+  return <div ref={ref} className={`reveal${shown ? ' in' : ''}`} style={{ transitionDelay: `${delay}ms` }}>{children}</div>
+}
+
 function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = false }: {
   onComplete: (session: RangeDaySession) => void
   onCancel: () => void
   initial?: StageInitial | null
   staged?: boolean
 }) {
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(initial?.id != null ? 4 : 1)
+  const [step, setStep] = useState<1 | 2>(initial?.id != null ? 2 : 1)
   const [note, setNote] = useState(initial?.note ?? '')
   const [selectedWeapons, setSelectedWeapons] = useState<number[]>(initial?.weaponIds ?? [])
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
@@ -891,15 +908,15 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
     if (!res.ok) { const d = await res.json(); setError(d.error || 'Error'); return }
     onComplete(await res.json())
   }
+  const packedTotal = rows.filter(r => r.quantity > 0).reduce((s, r) => s + r.quantity, 0)
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (step === 1) { setStep(2); return }
-    if (step === 2) { setStep(3); return }
-    if (step === 3) {
+    if (step === 1) {
       const err = validatePack()
       if (err) { setError(err); return }
       setError('')
-      setStep(4)
+      setStep(2)
       return
     }
     setShowRecap(true)
@@ -918,7 +935,7 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
       <main className="mx-auto max-w-3xl px-6 py-8">
         {/* Step heading */}
         <h2 className="text-xl font-semibold text-center text-neutral-900 dark:text-neutral-100 mb-6">
-          {step === 1 ? 'Where are you headed?' : step === 2 ? 'Choose your weapons' : step === 3 ? 'Choose your ammo' : 'Review your pack'}
+          {step === 1 ? 'Pack your bag' : 'Review your pack'}
         </h2>
 
         {loading ? (
@@ -926,21 +943,17 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
         ) : (
           <form onSubmit={submit} className="flex flex-col gap-6">
             {step === 1 && (
-              <div>
-                <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-3">Give this range day a name — usually where you&apos;re shooting.</p>
-                <input type="text" autoFocus placeholder="e.g. Burro Canyon" value={note}
-                  onChange={e => setNote(e.target.value)}
-                  className="w-full px-4 py-3 border border-neutral-300 dark:border-neutral-600 rounded-xl text-base bg-white dark:bg-neutral-900" />
-                <button type="button" onClick={() => setStep(2)}
-                  className="mt-6 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">
-                  Continue to guns →
-                </button>
-              </div>
-            )}
-
-            {step === 2 && (
-              <div>
-                <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-3">Tap the weapons you're bringing. You can add more later on the Weapons tab.</p>
+              <div className="flex flex-col gap-8">
+                <Reveal>
+                  <p className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">1 · Where to</p>
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-3">Give this range day a name — usually where you&apos;re shooting.</p>
+                  <input type="text" autoFocus placeholder="e.g. Burro Canyon" value={note}
+                    onChange={e => setNote(e.target.value)}
+                    className="w-full px-4 py-3 border border-neutral-300 dark:border-neutral-600 rounded-xl text-base bg-white dark:bg-neutral-900" />
+                </Reveal>
+                <Reveal delay={90}>
+                  <p className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">2 · Guns</p>
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-3">Tap the weapons you&apos;re bringing. You can add more later on the Weapons tab.</p>
                 {weapons.length === 0 ? (
                   <p className="text-sm text-neutral-400 dark:text-neutral-500">No weapons yet — you can skip this and add them later.</p>
                 ) : (
@@ -970,38 +983,11 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
                     })}
                   </div>
                 )}
-                <button type="button" onClick={() => setStep(3)}
-                  className="mt-6 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">
-                  Continue to Ammo →
-                </button>
-              </div>
-            )}
-
-            {step === 3 && (
-              <div className="flex flex-col gap-4">
-                {/* Keep the selected-weapon context visible on the ammo step */}
-                <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Your range bag</p>
-                    <button type="button" onClick={() => setStep(2)}
-                      className="text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer">Edit</button>
-                  </div>
-                  {selectedWeapons.length === 0 ? (
-                    <p className="text-sm text-neutral-400 dark:text-neutral-500">No weapons selected — you can add them later on the Weapons tab.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {weapons.filter(w => selectedWeapons.includes(w.id)).map(w => (
-                        <span key={w.id} className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg text-sm">
-                          <span className="font-medium text-neutral-800 dark:text-neutral-200">{w.name}</span>
-                          <span className="text-xs text-neutral-400 dark:text-neutral-500">{w.caliber}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Ammo to take</p>
+                </Reveal>
+                <Reveal delay={180}>
+                  <p className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">3 · Ammo</p>
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-3">Filtered to the calibers of your guns{selectedWeapons.length === 0 ? ' — pick a gun above to narrow it down' : ''}.</p>
+                  <div>
                   {ammoStepTypes.length === 0 ? (
                     <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-2">
                       {bagCalibers.size > 0
@@ -1034,7 +1020,7 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
                                 <QuickAdd rounds={qty} cap={avail}
                                   onChange={(n) => setAmmoQty(t.id, n)}
                                   onStep={(d) => stepAmmo(t.id, d)}
-                                  steps={[50, 100]} step={1} inline />
+                                  steps={[5, 10, 50, 100]} step={1} inline />
                                 <button type="button" onClick={() => toggleAmmo(t.id)} title="Remove"
                                   className="w-9 h-9 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-400 dark:text-neutral-500 hover:text-red-500 hover:border-red-200 cursor-pointer">×</button>
                               </div>
@@ -1050,22 +1036,25 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
 
                 {error && <p className="text-red-500 text-sm">{error}</p>}
 
-                <div className="flex items-center gap-3">
-                  <button type="button" onClick={() => setStep(2)}
-                    className="px-4 py-2 rounded-lg text-sm cursor-pointer bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700">← Back</button>
+                <div className="mt-2">
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="font-medium text-neutral-700 dark:text-neutral-300">Total packed</span>
+                    <span className="tabular-nums font-bold text-neutral-900 dark:text-neutral-100">{packedTotal.toLocaleString()} rds</span>
+                  </div>
                   <button type="button" onClick={() => {
                     const err = validatePack()
                     if (err) { setError(err); return }
                     setError('')
-                    setStep(4)
+                    setStep(2)
                   }}
-                    className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">
-                    Review →
+                    className="w-full px-4 py-3 bg-black text-white rounded-xl text-base font-semibold hover:opacity-80 cursor-pointer">
+                    Review pack →
                   </button>
                 </div>
+                </Reveal>
               </div>
             )}
-            {step === 4 && (
+            {step === 2 && (
               <div className="flex flex-col gap-4">
                 <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
                   <div className="flex items-center justify-between mb-1">
@@ -1114,7 +1103,7 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
                 </div>
                 {error && <p className="text-red-500 text-sm">{error}</p>}
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setStep(3)}
+                  <button type="button" onClick={() => setStep(1)}
                     className="px-4 py-2 rounded-lg text-sm cursor-pointer bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700">
                     ← Back
                   </button>
@@ -1406,6 +1395,111 @@ function PprCalculatorModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+function fmtDuration(ms: number): string {
+  const mins = Math.max(0, Math.round(ms / 60000))
+  const h = Math.floor(mins / 60)
+  return h > 0 ? `${h}h ${mins % 60}m` : `${mins}m`
+}
+
+// Day-complete summary (openGym FinishSummary): locked sheet after the end
+// POST lands — duration/fired/guns/returned tiles, caliber bars, per-gun
+// today + lifetime rows, then Nice! back to the dashboard.
+function DayCompleteSheet({ note, startedAt, endedAt, strings, weapons, ammoTypes, bag, totals, onDone }: {
+  note: string | null
+  startedAt: string | null
+  endedAt: string
+  strings: RangeDayString[]
+  weapons: Weapon[]
+  ammoTypes: AmmoType[]
+  bag: BagItem[]
+  totals: Record<number, number>
+  onDone: () => void
+}) {
+  const typeById = new Map(ammoTypes.map(t => [t.id, t]))
+  const totalFired = strings.reduce((s, x) => s + x.rounds, 0)
+  const returned = bag.reduce((s, b) => s + b.inBag, 0)
+  const firedGuns = [...new Set(strings.map(s => s.weaponId))]
+  const byGun = firedGuns.map(id => ({
+    id,
+    name: weapons.find(w => w.id === id)?.name ?? `Gun #${id}`,
+    today: strings.filter(s => s.weaponId === id).reduce((s, x) => s + x.rounds, 0),
+    lifetime: totals[id] ?? 0,
+  })).sort((a, b) => b.today - a.today)
+  const byCaliber = (() => {
+    const map = new Map<string, number>()
+    for (const s of strings) {
+      const cal = typeById.get(s.ammoTypeId)?.caliber ?? 'Unknown'
+      map.set(cal, (map.get(cal) ?? 0) + s.rounds)
+    }
+    return [...map.entries()].sort((a, b) => b[1] - a[1])
+  })()
+  const maxCal = Math.max(...byCaliber.map(([, n]) => n), 1)
+  const when = new Date(endedAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-700 p-6 max-w-sm w-full max-h-[90vh] overflow-y-auto">
+        <div className="text-center">
+          <div className="flex justify-center text-green-700 dark:text-green-400"><TabIcon name="range" size={44} /></div>
+          <h3 className="text-lg font-semibold mt-2">Range day complete!</h3>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">{note ? `“${note}” · ` : ''}{when}</p>
+        </div>
+        <div className="grid grid-cols-4 gap-2 mt-4 text-center">
+          {[
+            { label: 'Time', value: startedAt ? fmtDuration(new Date(endedAt).getTime() - new Date(startedAt).getTime()) : '–' },
+            { label: 'Fired', value: totalFired.toLocaleString() },
+            { label: 'Guns', value: `${firedGuns.length}` },
+            { label: 'Back', value: returned.toLocaleString() },
+          ].map(t => (
+            <div key={t.label} className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-1 py-2.5">
+              <p className="text-[10px] text-neutral-400 dark:text-neutral-500 uppercase tracking-wide">{t.label}</p>
+              <p className="text-base font-bold tabular-nums mt-0.5">{t.value}</p>
+            </div>
+          ))}
+        </div>
+        {byCaliber.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1.5">What you just shot</p>
+            <div className="flex flex-col gap-1">
+              {byCaliber.map(([cal, n]) => (
+                <div key={cal}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-sm font-medium truncate">{cal}</span>
+                    <span className="text-sm font-semibold tabular-nums shrink-0">{n.toLocaleString()}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-neutral-100 dark:bg-neutral-800 mt-1 overflow-hidden">
+                    <div className="h-full rounded-full bg-neutral-800 dark:bg-neutral-200" style={{ width: `${Math.max(4, Math.round((n / maxCal) * 100))}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="mt-4">
+          <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1.5">Per gun</p>
+          {byGun.length === 0 ? (
+            <p className="text-sm text-neutral-400 dark:text-neutral-500">No shots logged this time.</p>
+          ) : (
+            <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 divide-y divide-neutral-100 dark:divide-neutral-800">
+              {byGun.map(g => (
+                <div key={g.id} className="flex items-baseline justify-between gap-2 px-3 py-2">
+                  <span className="text-sm font-medium truncate">{g.name}</span>
+                  <span className="text-xs text-neutral-500 dark:text-neutral-400 tabular-nums shrink-0">
+                    {g.today.toLocaleString()} today{g.lifetime > 0 ? ` · ${g.lifetime.toLocaleString()} all-time` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <button onClick={onDone}
+          className="mt-5 w-full px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 cursor-pointer">
+          Nice!
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function ConfirmEndModal({ bag, strings, weapons, ammoTypes, onConfirm, onCancel }: {
   bag: BagItem[]
   strings: RangeDayString[]
@@ -1495,7 +1589,7 @@ function ConfirmEndModal({ bag, strings, weapons, ammoTypes, onConfirm, onCancel
 
         <div className="flex gap-3 mt-4">
           <button type="button" onClick={onCancel}
-            className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">Cancel</button>
+            className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">Keep shooting</button>
           <button type="button" onClick={onConfirm}
             className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 cursor-pointer">End Range Day</button>
         </div>
@@ -1762,8 +1856,8 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
           <div className="flex items-center justify-center gap-4 mt-4">
             <button type="button" onClick={() => step(-1)} disabled={rounds <= 0}
               className="w-12 h-12 flex items-center justify-center border rounded-xl text-xl hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40">−</button>
-            <input type="number" min="0" value={rounds} inputMode="numeric" onChange={e => setRoundsClamped(Number(e.target.value))}
-              className="w-24 text-center text-3xl font-bold text-neutral-900 dark:text-neutral-100 border-0 focus:outline-none" />
+            <QtyInput value={rounds} onCommit={setRoundsClamped}
+              className="w-24 text-center text-3xl font-bold tabular-nums text-neutral-900 dark:text-neutral-100 border-0 focus:outline-none bg-transparent" />
             <button type="button" onClick={() => step(1)} disabled={rounds >= cap}
               className="w-12 h-12 flex items-center justify-center border rounded-xl text-xl hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40">+</button>
           </div>
@@ -1816,8 +1910,8 @@ function WeaponRangeCard({ weapon, bag, ammoTypes, gunLoaded, strings, onAction,
               <div className="flex items-center justify-center gap-4">
                 <button type="button" onClick={() => step(-1)} disabled={rounds <= 0}
                   className="w-10 h-10 flex items-center justify-center border bg-white dark:bg-neutral-900 rounded-lg text-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40">−</button>
-                <input type="number" min="0" value={rounds} inputMode="numeric" onChange={e => setRoundsClamped(Number(e.target.value))}
-                  className="w-20 text-center text-2xl font-bold text-neutral-900 dark:text-neutral-100 border-0 bg-transparent focus:outline-none" />
+                <QtyInput value={rounds} onCommit={setRoundsClamped}
+                  className="w-20 text-center text-2xl font-bold tabular-nums text-neutral-900 dark:text-neutral-100 border-0 bg-transparent focus:outline-none" />
                 <button type="button" onClick={() => step(1)} disabled={rounds >= cap}
                   className="w-10 h-10 flex items-center justify-center border bg-white dark:bg-neutral-900 rounded-lg text-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40">+</button>
               </div>
@@ -1885,20 +1979,23 @@ function QuickAdd({ rounds, cap, onChange, onStep, onMax, steps = [5, 10, 30], s
   inline?: boolean
 }) {
   const chip = "px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+  const stepBtn = "w-9 h-9 border rounded-lg text-lg leading-none hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
   if (inline) {
     return (
-      <div className="flex flex-wrap items-center gap-2">
-        {steps.map(n => (
-          <button type="button" key={n} onClick={() => onChange(rounds + n)} disabled={rounds + n > cap} className={chip}>+{n}</button>
-        ))}
-        <button type="button" onClick={() => onStep(-step)} disabled={rounds <= 0} className={chip}>−</button>
-        <input type="number" min="0" value={rounds} inputMode="numeric"
-          onChange={e => onChange(Number(e.target.value))}
-          className="w-16 px-2 py-1.5 border rounded-lg text-sm text-center" />
-        <button type="button" onClick={() => onStep(step)} disabled={rounds >= cap} className={chip}>+</button>
-        {onMax && (
-          <button type="button" onClick={onMax} disabled={cap === 0} className={chip}>All</button>
-        )}
+      <div className="flex flex-col gap-1.5 items-end sm:flex-row sm:items-center sm:gap-2">
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => onStep(-step)} disabled={rounds <= 0} className={stepBtn} aria-label="Decrease">−</button>
+          <QtyInput value={rounds} onCommit={onChange} />
+          <button type="button" onClick={() => onStep(step)} disabled={rounds >= cap} className={stepBtn} aria-label="Increase">+</button>
+        </div>
+        <div className="flex flex-wrap gap-1.5 justify-end">
+          {steps.map(n => (
+            <button type="button" key={n} onClick={() => onChange(rounds + n)} disabled={rounds + n > cap} className={chip}>+{n}</button>
+          ))}
+          {onMax && (
+            <button type="button" onClick={onMax} disabled={cap === 0} className={chip}>All</button>
+          )}
+        </div>
       </div>
     )
   }
@@ -1917,14 +2014,38 @@ function QuickAdd({ rounds, cap, onChange, onStep, onMax, steps = [5, 10, 30], s
       <div className="flex items-center gap-1 mt-2">
         <button type="button" onClick={() => onStep(-step)} disabled={rounds <= 0}
           className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">−</button>
-        <input type="number" min="0" value={rounds} inputMode="numeric"
-          onChange={e => onChange(Number(e.target.value))}
-          className="w-16 px-2 py-1.5 border rounded-lg text-sm text-center" />
+        <QtyInput value={rounds} onCommit={onChange} />
         <button type="button" onClick={() => onStep(step)} disabled={rounds >= cap}
           className="px-3 py-1.5 border rounded-lg text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">+</button>
       </div>
       {rounds === 0 && <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">No rounds selected</p>}
     </div>
+  )
+}
+
+// Quantity field with deferred commit: typing only edits local text and
+// commits on blur/Enter, so clearing the field to retype never deletes the
+// row out from under you. Empty/invalid reverts to the last value.
+function QtyInput({ value, onCommit, className }: { value: number; onCommit: (n: number) => void; className?: string }) {
+  const [text, setText] = useState<string | null>(null)
+  useEffect(() => { setText(null) }, [value])
+  const commit = (raw: string) => {
+    setText(null)
+    const trimmed = raw.trim()
+    if (trimmed === '') return
+    const n = Math.floor(Number(trimmed))
+    if (!Number.isFinite(n) || n < 0) return
+    onCommit(n)
+  }
+  return (
+    <input
+      type="text" inputMode="numeric" pattern="[0-9]*"
+      value={text ?? String(value)}
+      onChange={e => setText(e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, ''))}
+      onBlur={e => commit(e.target.value)}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+      className={className ?? 'w-20 px-2 py-2 border rounded-lg text-base text-center tabular-nums'}
+    />
   )
 }
 
@@ -2146,6 +2267,7 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>(initialAmmoTypes)
 
   const [showEndModal, setShowEndModal] = useState(false)
+  const [completeData, setCompleteData] = useState<{ endedAt: string; totals: Record<number, number> } | null>(null)
   const [showAcquire, setShowAcquire] = useState(false)
   const [bagOpen, setBagOpen] = useState(false)
   const [activeWeaponId, setActiveWeaponId] = useState<number | null>(null)
@@ -2278,9 +2400,19 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
       body: JSON.stringify({}),
     })
     if (!res.ok) { alert('Error ending session'); return }
+    const body = await res.json().catch(() => null)
+    const endedAt: string = body?.session?.endedAt ?? new Date().toISOString()
+    let totals: Record<number, number> = {}
+    try {
+      const r = await apiFetch('/weapons/firing-summary')
+      if (r.ok) {
+        const arr: { weaponId: number; totalRounds: number }[] = await r.json()
+        for (const t of arr) totals[t.weaponId] = t.totalRounds
+      }
+    } catch { /* summary shows today-only without lifetime */ }
     try { localStorage.removeItem(lastLoadKey) } catch { /* ignore */ }
     setShowEndModal(false)
-    onSessionEnd()
+    setCompleteData({ endedAt, totals })
   }
 
   return (
@@ -2288,6 +2420,20 @@ function RangeDayView({ session: initialSession, ammoTypes: initialAmmoTypes, on
       {showEndModal && (
         <ConfirmEndModal bag={bag} strings={strings} weapons={weapons} ammoTypes={ammoTypes}
           onConfirm={handleEnd} onCancel={() => setShowEndModal(false)} />
+      )}
+
+      {completeData && (
+        <DayCompleteSheet
+          note={session.note}
+          startedAt={session.startedAt}
+          endedAt={completeData.endedAt}
+          strings={strings}
+          weapons={weapons}
+          ammoTypes={ammoTypes}
+          bag={bag}
+          totals={completeData.totals}
+          onDone={onSessionEnd}
+        />
       )}
 
       {showAcquire && (
@@ -5000,9 +5146,7 @@ function BottomTabBar({ tab, activeSession, stagedCount, cleaningDue, onGo, onSt
       <TabButton active={on('range')} icon="range" label="Range" dot={stagedCount > 0} onClick={() => onGo('range')} />
       <button type="button" className={'start' + (activeSession ? ' rec' : '') + (staged ? ' staged' : '')} onClick={running ? onResume : onStart} aria-label={running ? 'Resume range day' : staged ? 'Start staged range day' : 'Start range day'}>
         <span className="cir"><span className="icn" aria-hidden="true"><TabIcon name="play" /></span></span>
-        {running && activeSession?.startedAt
-          ? <TabElapsed start={activeSession.startedAt} />
-          : <span>{activeSession ? 'Resume' : 'Start'}</span>}
+        <span>{activeSession ? 'Resume' : 'Start'}</span>
       </button>
       <TabButton active={on('ammo')} icon="ammo" label="Ammo" onClick={() => onGo('ammo')} />
       <TabButton active={on('guns')} icon="guns" label="Guns" dot={cleaningDue > 0} onClick={() => onGo('guns')} />
