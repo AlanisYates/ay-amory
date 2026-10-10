@@ -22,3 +22,122 @@
   --chart-grid: #292524;
   --chart-tick: #78716c;
 }
+
+/* ── Bottom tab bar (openGym-style floating pill) ─────────────── */
+#tabbar {
+  --icon-stroke: 1.65;
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 7px 10px 9px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: saturate(180%) blur(10px);
+  -webkit-backdrop-filter: saturate(180%) blur(10px);
+  border: 1px solid #e7e5e4;
+  border-radius: 20px;
+  box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.35);
+}
+.dark #tabbar {
+  background: rgba(12, 12, 14, 0.94);
+  border-color: #292524;
+  box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.6);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  #tabbar { background: #fff; }
+  .dark #tabbar { background: #0c0c0e; }
+}
+#tabbar button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  color: #78716c;
+  padding: 3px 2px 0;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+.dark #tabbar button {
+  color: #a8a29e;
+}
+#tabbar button.on {
+  color: #000;
+  font-weight: 600;
+  --icon-stroke: 2;
+}
+.dark #tabbar button.on {
+  color: #fff;
+}
+#tabbar button .icn {
+  display: inline-flex;
+  line-height: 1;
+  color: #57534e;
+}
+.dark #tabbar button .icn {
+  color: #d6d3d1;
+}
+#tabbar button.on .icn {
+  color: inherit;
+}
+#tabbar .tab-ic {
+  position: relative;
+  display: inline-flex;
+}
+#tabbar .tab-dot {
+  position: absolute;
+  top: -1px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #ea580c;
+  box-shadow: 0 0 0 2px #fff;
+  pointer-events: none;
+}
+.dark #tabbar .tab-dot {
+  box-shadow: 0 0 0 2px #0c0c0e;
+}
+#tabbar button.start {
+  margin-top: -26px;
+  flex: 1.1;
+}
+#tabbar button.start:active .cir {
+  transform: scale(0.93);
+}
+#tabbar button.start .cir {
+  width: 52px;
+  height: 52px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #16a34a;
+  color: #fff;
+  --icon-stroke: 2;
+  box-shadow: 0 6px 18px -4px rgba(22, 163, 74, 0.55);
+  transition: transform 0.15s ease;
+  position: relative;
+}
+#tabbar button.start .cir .icn {
+  display: inline-flex;
+  color: inherit;
+}
+#tabbar button.start.rec .cir {
+  background: #ea580c;
+  box-shadow: 0 6px 18px -4px rgba(234, 88, 12, 0.55);
+}
+#tabbar button.start .tab-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}

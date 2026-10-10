@@ -18,6 +18,7 @@
 - Reusable `range bag profiles` (pack once, reuse)
 - Magazine tracking per weapon (count + capacity)
 - Price / cost-per-round rollups per weapon and per range day
+- Ammo tab stock curve (total rds over time, openGym weight-card analog with delta + line; Home uses session bars instead)
 
 ## Notes
 - `WeaponRangeCard` is now the V2 hero (`Photo` top, `In Bag`/`Loaded` middle, `Shoot All` split). No `V2 Preview` toggle anymore; `RangeDayView` uses single-gun focus (`activeWeaponId`) by default.
