@@ -619,6 +619,150 @@ type StageInitial = {
   ammo: { ammoTypeId: number; quantity: number }[]
 }
 
+// Pack detail (weapons + bag) → wizard initial, shared by every edit path so a
+// staged reload always lands on the review step with everything filled.
+function packDetailToInit(id: number, d: any): StageInitial {
+  return {
+    id,
+    note: d.note ?? null,
+    weaponIds: (d.weapons ?? []).map((w: any) => w.id),
+    ammo: (d.bag ?? []).map((b: any) => ({ ammoTypeId: b.ammoTypeId, quantity: b.inBag ?? b.taken ?? b.quantity ?? 0 })),
+  }
+}
+
+export type RecapLine = { name: string; sub?: string; qty?: string }
+
+// The last gate before every start (openGym's Quick check-in): recap lines,
+// an honesty line about the clock/stock, a blue primary Start and a ghost
+// way back to editing. Purely presentational — callers own the confirm.
+function RecapSheet({ title, dateLine, guns, ammoLines, total, busy, error, disabled, disabledReason, onConfirm, onCancel, onEdit }: {
+  title: string
+  dateLine: string
+  guns: RecapLine[]
+  ammoLines: RecapLine[]
+  total: string
+  busy: boolean
+  error: string
+  disabled?: boolean
+  disabledReason?: string
+  onConfirm: () => void
+  onCancel: () => void
+  onEdit: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-700 p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Ready to shoot?</h3>
+          <button onClick={onCancel} className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 text-xl leading-none cursor-pointer" aria-label="Cancel">×</button>
+        </div>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">{title} · {dateLine}</p>
+        <div className="mt-4 rounded-xl border border-neutral-200 dark:border-neutral-700 divide-y divide-neutral-100 dark:divide-neutral-800">
+          <div className="px-4 py-3">
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-500 uppercase tracking-wide mb-1.5">Guns · {guns.length}</p>
+            {guns.length === 0 ? (
+              <p className="text-sm text-neutral-400 dark:text-neutral-500">No guns packed</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {guns.map((g, i) => (
+                  <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 dark:bg-neutral-800 rounded-full text-xs">
+                    <span className="font-medium">{g.name}</span>
+                    {g.sub && <span className="text-neutral-400 dark:text-neutral-500">{g.sub}</span>}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="px-4 py-3">
+            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-500 uppercase tracking-wide mb-1.5">Ammo · {total}</p>
+            {ammoLines.length === 0 ? (
+              <p className="text-sm text-neutral-400 dark:text-neutral-500">No ammo packed</p>
+            ) : (
+              <div className="space-y-1">
+                {ammoLines.map((a, i) => (
+                  <div key={i} className="flex justify-between text-xs gap-2">
+                    <span className="text-neutral-600 dark:text-neutral-400 truncate">{a.name}{a.sub ? <span className="text-neutral-400 dark:text-neutral-500"> · {a.sub}</span> : null}</span>
+                    <span className="tabular-nums text-neutral-700 dark:text-neutral-300 ml-2 shrink-0">{a.qty}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-3">Clock starts on Start — stock moves from storage to your bag.</p>
+        {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+        <button onClick={onConfirm} disabled={busy || disabled} title={disabled ? disabledReason : undefined}
+          className="mt-3 w-full px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+          {busy ? 'Starting…' : 'Start range day'}
+        </button>
+        <button onClick={onEdit} className="mt-2 w-full text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer">
+          Keep editing →
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Recap for a staged pack: fetches the pack + type names, confirms with a
+// POST start. One gate for the bottom nav, Home card and Range tab alike.
+function PackRecapSheet({ packId, hasActive, onStarted, onClose, onEdit }: {
+  packId: number
+  hasActive: boolean
+  onStarted: (s: RangeDaySession) => void
+  onClose: () => void
+  onEdit: (init: StageInitial) => void
+}) {
+  const [detail, setDetail] = useState<any>(null)
+  const [types, setTypes] = useState<AmmoType[]>([])
+  const [starting, setStarting] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    apiFetch(`/ammo/range-days/${packId}`).then(r => r.ok ? r.json() : null).then(d => { if (!cancelled) setDetail(d) }).catch(() => {})
+    apiFetch('/ammo/types').then(r => r.ok ? r.json() : []).then(t => { if (!cancelled) setTypes(Array.isArray(t) ? t : []) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [packId])
+  const typeById = new Map(types.map(t => [t.id, t]))
+  const guns: RecapLine[] = (detail?.weapons ?? []).map((w: any) => ({ name: w.name ?? `Gun #${w.id}`, sub: w.caliber ?? undefined }))
+  const ammoLines: RecapLine[] = (detail?.bag ?? []).map((b: any) => {
+    const t = typeById.get(b.ammoTypeId)
+    const qty = b.inBag ?? b.taken ?? b.quantity ?? 0
+    return { name: t?.name ?? `Type #${b.ammoTypeId}`, sub: t?.caliber, qty: `${qty.toLocaleString()} rds` }
+  })
+  const totalQty = (detail?.bag ?? []).reduce((s: number, b: any) => s + (b.inBag ?? b.taken ?? b.quantity ?? 0), 0)
+  const start = async () => {
+    setError('')
+    setStarting(true)
+    const res = await apiFetch(`/ammo/range-days/${packId}/start`, { method: 'POST' })
+    setStarting(false)
+    if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.error || 'Could not start range day'); return }
+    onStarted(await res.json())
+  }
+  if (detail == null) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+        <div className="bg-white dark:bg-neutral-900 rounded-2xl p-6 text-sm text-neutral-500 dark:text-neutral-400" onClick={e => e.stopPropagation()}>Loading pack…</div>
+      </div>
+    )
+  }
+  return (
+    <RecapSheet
+      title={detail.note || 'Untitled pack'}
+      dateLine="Today"
+      guns={guns}
+      ammoLines={ammoLines}
+      total={`${totalQty.toLocaleString()} rds`}
+      busy={starting}
+      error={error}
+      disabled={hasActive}
+      disabledReason="End the current range day first"
+      onConfirm={start}
+      onCancel={onClose}
+      onEdit={() => onEdit(packDetailToInit(packId, detail))}
+    />
+  )
+}
+
 
 function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = false }: {
   onComplete: (session: RangeDaySession) => void
@@ -626,7 +770,7 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
   initial?: StageInitial | null
   staged?: boolean
 }) {
-  const [step, setStep] = useState<1 | 2 | 3>(1)
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(initial?.id != null ? 4 : 1)
   const [note, setNote] = useState(initial?.note ?? '')
   const [selectedWeapons, setSelectedWeapons] = useState<number[]>(initial?.weaponIds ?? [])
   const [ammoTypes, setAmmoTypes] = useState<AmmoType[]>([])
@@ -636,6 +780,7 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [showRecap, setShowRecap] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -749,14 +894,15 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (step === 1) { setStep(2); return }
-    if (step === 2) {
+    if (step === 2) { setStep(3); return }
+    if (step === 3) {
       const err = validatePack()
       if (err) { setError(err); return }
       setError('')
-      setStep(3)
+      setStep(4)
       return
     }
-    await doStart()
+    setShowRecap(true)
   }
 
   return (
@@ -772,7 +918,7 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
       <main className="mx-auto max-w-3xl px-6 py-8">
         {/* Step heading */}
         <h2 className="text-xl font-semibold text-center text-neutral-900 dark:text-neutral-100 mb-6">
-          {step === 1 ? 'Choose your weapons' : step === 2 ? 'Choose your ammo' : 'Review your pack'}
+          {step === 1 ? 'Where are you headed?' : step === 2 ? 'Choose your weapons' : step === 3 ? 'Choose your ammo' : 'Review your pack'}
         </h2>
 
         {loading ? (
@@ -780,6 +926,19 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
         ) : (
           <form onSubmit={submit} className="flex flex-col gap-6">
             {step === 1 && (
+              <div>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-3">Give this range day a name — usually where you&apos;re shooting.</p>
+                <input type="text" autoFocus placeholder="e.g. Burro Canyon" value={note}
+                  onChange={e => setNote(e.target.value)}
+                  className="w-full px-4 py-3 border border-neutral-300 dark:border-neutral-600 rounded-xl text-base bg-white dark:bg-neutral-900" />
+                <button type="button" onClick={() => setStep(2)}
+                  className="mt-6 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">
+                  Continue to guns →
+                </button>
+              </div>
+            )}
+
+            {step === 2 && (
               <div>
                 <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-3">Tap the weapons you're bringing. You can add more later on the Weapons tab.</p>
                 {weapons.length === 0 ? (
@@ -811,20 +970,20 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
                     })}
                   </div>
                 )}
-                <button type="button" onClick={() => setStep(2)}
+                <button type="button" onClick={() => setStep(3)}
                   className="mt-6 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">
                   Continue to Ammo →
                 </button>
               </div>
             )}
 
-            {step === 2 && (
+            {step === 3 && (
               <div className="flex flex-col gap-4">
                 {/* Keep the selected-weapon context visible on the ammo step */}
                 <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Your range bag</p>
-                    <button type="button" onClick={() => setStep(1)}
+                    <button type="button" onClick={() => setStep(2)}
                       className="text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer">Edit</button>
                   </div>
                   {selectedWeapons.length === 0 ? (
@@ -840,9 +999,6 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
                     </div>
                   )}
                 </div>
-
-                <input type="text" placeholder="Note (e.g. Burro Canyon)" value={note}
-                  onChange={e => setNote(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
 
                 <div>
                   <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">Ammo to take</p>
@@ -895,13 +1051,13 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
                 {error && <p className="text-red-500 text-sm">{error}</p>}
 
                 <div className="flex items-center gap-3">
-                  <button type="button" onClick={() => setStep(1)}
+                  <button type="button" onClick={() => setStep(2)}
                     className="px-4 py-2 rounded-lg text-sm cursor-pointer bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700">← Back</button>
                   <button type="button" onClick={() => {
                     const err = validatePack()
                     if (err) { setError(err); return }
                     setError('')
-                    setStep(3)
+                    setStep(4)
                   }}
                     className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer">
                     Review →
@@ -909,8 +1065,16 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
                 </div>
               </div>
             )}
-            {step === 3 && (
+            {step === 4 && (
               <div className="flex flex-col gap-4">
+                <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Where to</p>
+                    <button type="button" onClick={() => setStep(1)}
+                      className="text-xs text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 cursor-pointer">Edit</button>
+                  </div>
+                  <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{note !== '' ? `“${note}”` : 'Untitled range day'}</p>
+                </div>
                 <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
                   <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Weapons</p>
                   {selectedWeapons.length === 0 ? (
@@ -948,15 +1112,9 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
                     </div>
                   )}
                 </div>
-                {note !== '' && (
-                  <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4">
-                    <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1">Note</p>
-                    <p className="text-sm text-neutral-700 dark:text-neutral-300 italic">“{note}”</p>
-                  </div>
-                )}
                 {error && <p className="text-red-500 text-sm">{error}</p>}
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setStep(2)}
+                  <button type="button" onClick={() => setStep(3)}
                     className="px-4 py-2 rounded-lg text-sm cursor-pointer bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700">
                     ← Back
                   </button>
@@ -964,7 +1122,7 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
                     className="flex-1 px-4 py-2 rounded-lg text-sm cursor-pointer bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40">
                     {initial?.id != null ? 'Save changes' : 'Stage for later'}
                   </button>
-                  <button type="submit" disabled={submitting}
+                  <button type="button" onClick={() => setShowRecap(true)} disabled={submitting}
                     className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm hover:opacity-80 cursor-pointer disabled:opacity-40">
                     Start range day
                   </button>
@@ -974,6 +1132,23 @@ function RangeDayStartWizard({ onComplete, onCancel, initial = null, staged = fa
           </form>
         )}
       </main>
+      {showRecap && (
+        <RecapSheet
+          title={note !== '' ? `“${note}”` : 'Untitled range day'}
+          dateLine="Today"
+          guns={weapons.filter(w => selectedWeapons.includes(w.id)).map(w => ({ name: w.name, sub: w.caliber }))}
+          ammoLines={rows.filter(r => r.quantity > 0).map(r => {
+            const t = ammoTypes.find(x => x.id === r.ammoTypeId)
+            return { name: t?.name ?? `Type #${r.ammoTypeId}`, sub: t?.caliber, qty: `${r.quantity.toLocaleString()} rds` }
+          })}
+          total={`${rows.filter(r => r.quantity > 0).reduce((s, r) => s + r.quantity, 0).toLocaleString()} rds`}
+          busy={submitting}
+          error={error}
+          onConfirm={() => void doStart()}
+          onCancel={() => { setError(''); setShowRecap(false) }}
+          onEdit={() => { setError(''); setShowRecap(false) }}
+        />
+      )}
     </div>
   )
 }
@@ -4030,37 +4205,21 @@ function LiveRangeCard({ session, onResume }: { session: RangeDaySession; onResu
   )
 }
 
-function StagedHomeCard({ pack, hasActive, onStarted, onReview }: {
+function StagedHomeCard({ pack, hasActive, onStart, onReview }: {
   pack: { id: number; note: string | null }
   hasActive: boolean
-  onStarted: (s: RangeDaySession) => void
-  onReview: () => void
+  onStart: (id: number) => void
+  onReview: (id: number) => void
 }) {
   const [detail, setDetail] = useState<any>(null)
-  const [types, setTypes] = useState<AmmoType[]>([])
-  const [starting, setStarting] = useState(false)
-  const [error, setError] = useState('')
   useEffect(() => {
     let cancelled = false
     apiFetch(`/ammo/range-days/${pack.id}`).then(r => r.ok ? r.json() : null).then(d => { if (!cancelled) setDetail(d) }).catch(() => {})
-    apiFetch('/ammo/types').then(r => r.ok ? r.json() : []).then(t => { if (!cancelled) setTypes(Array.isArray(t) ? t : []) }).catch(() => {})
     return () => { cancelled = true }
   }, [pack.id])
-  const typeById = new Map(types.map(t => [t.id, t]))
   const guns: string[] = (detail?.weapons ?? []).map((w: any) => w.name ?? `Gun #${w.id}`)
-  const ammo: { name: string; qty: number }[] = (detail?.bag ?? []).map((b: any) => ({
-    name: typeById.get(b.ammoTypeId)?.name ?? `Type #${b.ammoTypeId}`,
-    qty: b.inBag ?? b.taken ?? b.quantity ?? 0,
-  }))
-  const total = ammo.reduce((s, a) => s + a.qty, 0)
-  const start = async () => {
-    setError('')
-    setStarting(true)
-    const res = await apiFetch(`/ammo/range-days/${pack.id}/start`, { method: 'POST' })
-    setStarting(false)
-    if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.error || 'Could not start range day'); return }
-    onStarted(await res.json())
-  }
+  const total = ((detail?.bag ?? []) as any[]).reduce((s, b) => s + (b.inBag ?? b.taken ?? b.quantity ?? 0), 0)
+  const typeCount = ((detail?.bag ?? []) as any[]).length
   return (
     <div className="rounded-2xl border-2 border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -4081,17 +4240,16 @@ function StagedHomeCard({ pack, hasActive, onStarted, onReview }: {
               ))}
             </div>
           )}
-          {ammo.length > 0 && (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2 tabular-nums">{total.toLocaleString()} rds packed · {ammo.length} type{ammo.length !== 1 ? 's' : ''}</p>
+          {typeCount > 0 && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2 tabular-nums">{total.toLocaleString()} rds packed · {typeCount} type{typeCount !== 1 ? 's' : ''}</p>
           )}
         </>
       )}
-      {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
-      <button onClick={start} disabled={starting || hasActive} title={hasActive ? 'End the current range day first' : undefined}
+      <button onClick={() => onStart(pack.id)} disabled={hasActive} title={hasActive ? 'End the current range day first' : undefined}
         className="mt-3 w-full px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
-        {starting ? 'Starting…' : 'Start range day'}
+        Start range day
       </button>
-      <button onClick={onReview} className="mt-2 w-full text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer">
+      <button onClick={() => onReview(pack.id)} className="mt-2 w-full text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer">
         Review pack →
       </button>
     </div>
@@ -4228,8 +4386,8 @@ function InventoryDashboard({ inventory, weapons, totals, cleanings, activeSessi
   pastCount: number
   sessionDates: string[]
   onResume: () => void
-  onStartPack: (s: RangeDaySession) => void
-  onReviewPacks: () => void
+  onStartPack: (id: number) => void
+  onReviewPacks: (id: number) => void
   onViewRange: () => void
   onViewBackup: () => void
   onCaliberClick: (group: CaliberGroup) => void
@@ -4283,7 +4441,7 @@ function InventoryDashboard({ inventory, weapons, totals, cleanings, activeSessi
       {stagedPacks.length > 0 && (
         <div className="flex flex-col gap-3 mb-6">
           {stagedPacks.map(p => (
-            <StagedHomeCard key={p.id} pack={p} hasActive={activeSession != null} onStarted={onStartPack} onReview={onReviewPacks} />
+            <StagedHomeCard key={p.id} pack={p} hasActive={activeSession != null} onStart={onStartPack} onReview={onReviewPacks} />
           ))}
         </div>
       )}
@@ -4523,7 +4681,7 @@ function RangeDayDetailDrawer({ sessionId, onClose }: { sessionId: number; onClo
   )
 }
 
-function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0, onChanged }: { onPack: () => void; onEdit: (init: StageInitial) => void; onStart: (s: RangeDaySession) => void; hasActive: boolean; refreshKey?: number; onChanged?: () => void }) {
+function RangeDaysTab({ onPack, onEdit, onRecap, hasActive, refreshKey = 0, onChanged }: { onPack: () => void; onEdit: (init: StageInitial) => void; onRecap: (id: number) => void; hasActive: boolean; refreshKey?: number; onChanged?: () => void }) {
   const [sessions, setSessions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [viewingId, setViewingId] = useState<number | null>(null)
@@ -4555,12 +4713,6 @@ function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0, onCh
   }, [stagedIds])
   const typeById = new Map(ammoTypes.map(t => [t.id, t]))
 
-  const startStaged = async (id: number) => {
-    setActionError('')
-    const res = await apiFetch(`/ammo/range-days/${id}/start`, { method: 'POST' })
-    if (!res.ok) { const d = await res.json().catch(() => ({})); setActionError(d.error || 'Could not start range day'); return }
-    onStart(await res.json())
-  }
   const deleteStaged = async (id: number) => {
     if (!confirm('Delete this staged pack list? Nothing has left storage.')) return
     const res = await apiFetch(`/ammo/range-days/${id}`, { method: 'DELETE' })
@@ -4572,8 +4724,7 @@ function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0, onCh
     setActionError('')
     const res = await apiFetch(`/ammo/range-days/${id}`)
     if (!res.ok) { setActionError('Could not load pack list'); return }
-    const d = await res.json()
-    onEdit({ id, note: d.note ?? null, weaponIds: (d.weapons ?? []).map((w: any) => w.id), ammo: (d.bag ?? []).map((b: any) => ({ ammoTypeId: b.ammoTypeId, quantity: b.inBag ?? b.taken ?? 0 })) })
+    onEdit(packDetailToInit(id, await res.json()))
   }
 
   const staged = sessions.filter((s: any) => s.startedAt == null)
@@ -4624,7 +4775,7 @@ function RangeDaysTab({ onPack, onEdit, onStart, hasActive, refreshKey = 0, onCh
                   </>
                 )}
                 <div className="flex flex-wrap gap-2 mt-3">
-                  <button onClick={() => startStaged(s.id)} disabled={hasActive} title={hasActive ? 'End the current range day first' : undefined}
+                  <button onClick={() => onRecap(s.id)} disabled={hasActive} title={hasActive ? 'End the current range day first' : undefined}
                     className="text-xs px-3 py-1.5 bg-black text-white rounded-lg cursor-pointer hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed">Start range day</button>
                   <button onClick={() => editStaged(s.id)} className="text-xs px-3 py-1.5 border border-neutral-300 dark:border-neutral-600 rounded-lg cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800">Edit</button>
                   <button onClick={() => deleteStaged(s.id)} className="text-xs px-3 py-1.5 border border-neutral-300 dark:border-neutral-600 rounded-lg cursor-pointer text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30">Delete</button>
@@ -4778,99 +4929,6 @@ function ExportImportTab({ onImported }: { onImported?: () => void }) {
 
 type QuickAction = 'acquire' | 'expend' | 'adjust' | 'new-type' | null
 
-function StagedStartModal({ packs, onClose, onStart }: { packs: { id: number; note: string | null }[]; onClose: () => void; onStart: (s: RangeDaySession) => void }) {
-  const [selectedId, setSelectedId] = useState<number | null>(packs.length === 1 ? packs[0].id : null)
-  const [detail, setDetail] = useState<any>(null)
-  const [types, setTypes] = useState<AmmoType[]>([])
-  const [error, setError] = useState('')
-  const [starting, setStarting] = useState(false)
-  useEffect(() => {
-    apiFetch('/ammo/types').then(r => r.ok ? r.json() : []).then(t => setTypes(Array.isArray(t) ? t : [])).catch(() => {})
-  }, [])
-  useEffect(() => {
-    if (selectedId == null) { setDetail(null); return }
-    apiFetch(`/ammo/range-days/${selectedId}`).then(r => r.ok ? r.json() : null).then(setDetail).catch(() => {})
-  }, [selectedId])
-  const start = async () => {
-    if (selectedId == null) return
-    setError('')
-    setStarting(true)
-    const res = await apiFetch(`/ammo/range-days/${selectedId}/start`, { method: 'POST' })
-    setStarting(false)
-    if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.error || 'Could not start range day'); return }
-    onStart(await res.json())
-  }
-  const typeById = new Map(types.map(t => [t.id, t]))
-  const guns = (detail?.weapons ?? []).map((w: any) => w.name ?? `Gun #${w.id}`)
-  const ammo = (detail?.bag ?? []).map((b: any) => ({ name: typeById.get(b.ammoTypeId)?.name ?? `Type #${b.ammoTypeId}`, qty: b.inBag ?? b.taken ?? b.quantity ?? 0 }))
-  const total = ammo.reduce((s: number, a: any) => s + a.qty, 0)
-  const pack = packs.find(p => p.id === selectedId) ?? null
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700 p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Start staged range day</h3>
-          <button onClick={onClose} className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 text-xl leading-none cursor-pointer">×</button>
-        </div>
-        {packs.length > 1 && pack == null && (
-          <div className="flex flex-col gap-2">
-            <p className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">Choose a pack</p>
-            {packs.map(p => (
-              <button key={p.id} type="button" onClick={() => setSelectedId(p.id)}
-                className="flex items-center gap-2 text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 px-3 py-2.5 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer text-left">
-                <span className="truncate text-neutral-700 dark:text-neutral-300 font-medium">{p.note || 'Untitled pack'}</span>
-                <span className="ml-auto text-neutral-300 shrink-0">›</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {pack != null && (
-          <>
-            {packs.length > 1 && (
-              <button onClick={() => setSelectedId(null)} className="text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer mb-2">← All packs</button>
-            )}
-            <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{pack.note || 'Untitled pack'}</p>
-            {detail == null ? (
-              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-2">Loading pack…</p>
-            ) : (
-              <>
-                {guns.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {guns.map((g: string, i: number) => (
-                      <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">{g}</span>
-                    ))}
-                  </div>
-                )}
-                {ammo.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {ammo.map((a: any, i: number) => (
-                      <div key={i} className="flex justify-between text-xs">
-                        <span className="text-neutral-600 dark:text-neutral-400 truncate">{a.name}</span>
-                        <span className="tabular-nums text-neutral-700 dark:text-neutral-300 ml-2 shrink-0">{a.qty.toLocaleString()} rds</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between text-xs border-t border-neutral-100 dark:border-neutral-800 pt-1.5 mt-1">
-                      <span className="font-medium text-neutral-700 dark:text-neutral-300">Total</span>
-                      <span className="tabular-nums font-bold text-neutral-900 dark:text-neutral-100">{total.toLocaleString()} rds</span>
-                    </div>
-                  </div>
-                )}
-                {guns.length === 0 && ammo.length === 0 && (
-                  <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-2">Empty pack.</p>
-                )}
-              </>
-            )}
-            {error && <p className="text-red-500 text-sm mt-3">{error}</p>}
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-3">Starting begins time tracking and moves stock to your bag.</p>
-            <button onClick={start} disabled={starting || detail == null}
-              className="mt-3 w-full px-4 py-2.5 bg-black text-white rounded-xl text-sm font-semibold hover:opacity-80 cursor-pointer disabled:opacity-40">Start range day</button>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
-
 
 // ── Bottom TabBar (openGym-style) ─────────────────────────────────────────
 // Fixed bottom nav: Home | Range | (O) Start | Ammo | Guns.
@@ -4935,11 +4993,12 @@ function BottomTabBar({ tab, activeSession, stagedCount, cleaningDue, onGo, onSt
   // Backup lives under Home — keep Home lit there.
   const on = (k: TabKey) => tab === k || (tab === 'backup' && k === 'home')
   const running = !!activeSession?.startedAt
+  const staged = !activeSession && stagedCount > 0
   return (
     <nav id="tabbar" aria-label="Primary">
       <TabButton active={on('home')} icon="home" label="Home" onClick={() => onGo('home')} />
       <TabButton active={on('range')} icon="range" label="Range" dot={stagedCount > 0} onClick={() => onGo('range')} />
-      <button type="button" className={'start' + (activeSession ? ' rec' : '')} onClick={running ? onResume : onStart} aria-label={running ? 'Resume range day' : 'Start range day'}>
+      <button type="button" className={'start' + (activeSession ? ' rec' : '') + (staged ? ' staged' : '')} onClick={running ? onResume : onStart} aria-label={running ? 'Resume range day' : staged ? 'Start staged range day' : 'Start range day'}>
         <span className="cir"><span className="icn" aria-hidden="true"><TabIcon name="play" /></span></span>
         {running && activeSession?.startedAt
           ? <TabElapsed start={activeSession.startedAt} />
@@ -5011,7 +5070,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
   const [lastEnded, setLastEnded] = useState<{ id: number; note: string | null; startedAt: string | null; endedAt: string | null } | null>(null)
   const [pastCount, setPastCount] = useState(0)
   const [sessionDates, setSessionDates] = useState<string[]>([])
-  const [showStagedStart, setShowStagedStart] = useState(false)
+  const [recapPackId, setRecapPackId] = useState<number | null>(null)
   useEffect(() => {
     apiFetch('/ammo/range-days')
       .then(r => r.ok ? r.json() : [])
@@ -5112,6 +5171,14 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
     setTxRefreshKey(k => k + 1)
   }
 
+  // Reload a staged pack into the wizard at the review step ("reload it and
+  // hit start"). Falls back to the Range tab if the pack won't load.
+  const reviewPack = async (id: number) => {
+    const res = await apiFetch(`/ammo/range-days/${id}`)
+    if (!res.ok) { go({ tab: 'range', caliber: null, weaponId: null, ammoId: null }); return }
+    onEditStaged(packDetailToInit(id, await res.json()))
+  }
+
   const handleAddAmmo = async (rows: AddAmmoRow[], note: string) => {
     for (const r of rows) {
       if (r.kind === 'existing') {
@@ -5210,8 +5277,14 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
           </h2>
         )}
 
-        {showStagedStart && (
-          <StagedStartModal packs={stagedPacks} onClose={() => setShowStagedStart(false)} onStart={s => { setShowStagedStart(false); onRangeDayStart(s) }} />
+        {recapPackId != null && (
+          <PackRecapSheet
+            packId={recapPackId}
+            hasActive={activeSession != null}
+            onStarted={s => { setRecapPackId(null); onRangeDayStart(s) }}
+            onClose={() => setRecapPackId(null)}
+            onEdit={init => { setRecapPackId(null); onEditStaged(init) }}
+          />
         )}
 
         {tab === 'home' && (
@@ -5245,8 +5318,8 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
               pastCount={pastCount}
               sessionDates={sessionDates}
               onResume={onResumeRangeDay}
-              onStartPack={onRangeDayStart}
-              onReviewPacks={() => go({ tab: 'range', caliber: null, weaponId: null, ammoId: null })}
+              onStartPack={setRecapPackId}
+              onReviewPacks={reviewPack}
               onViewRange={() => go({ tab: 'range', caliber: null, weaponId: null, ammoId: null })}
               onViewBackup={() => go({ tab: 'backup', caliber: null, weaponId: null, ammoId: null })}
               onCaliberClick={g => go({ caliber: g.caliber })}
@@ -5415,7 +5488,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         {tab === 'range' && (
           <div className="flex flex-col gap-10">
             <section>
-              <RangeDaysTab onPack={onPackRangeDay} onEdit={onEditStaged} onStart={onRangeDayStart} hasActive={activeSession != null} refreshKey={txRefreshKey} onChanged={() => setTxRefreshKey(k => k + 1)} />
+              <RangeDaysTab onPack={onPackRangeDay} onEdit={onEditStaged} onRecap={setRecapPackId} hasActive={activeSession != null} refreshKey={txRefreshKey} onChanged={() => setTxRefreshKey(k => k + 1)} />
             </section>
             <section>
               <h3 className="text-sm font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-3">History</h3>
@@ -5437,7 +5510,7 @@ function DashboardView({ user, onLogout, onRangeDayStart, activeSession, onResum
         stagedCount={stagedPacks.length}
         cleaningDue={gunsDue}
         onGo={(t) => { setActiveAction(null); go({ tab: t, caliber: null, weaponId: null, ammoId: null }) }}
-        onStart={() => { if (stagedPacks.length > 0) setShowStagedStart(true); else onStartRangeDay() }}
+        onStart={() => { if (stagedPacks.length > 0) setRecapPackId(stagedPacks[0].id); else onStartRangeDay() }}
         onResume={onResumeRangeDay}
       />
       {showPpr && <PprCalculatorModal onClose={() => setShowPpr(false)} />}
